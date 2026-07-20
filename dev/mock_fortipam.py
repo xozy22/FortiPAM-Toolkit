@@ -58,6 +58,7 @@ DB = {
 }
 NEXT_ID = {"secret/folder": 50, "secret/database": 500, "secret/target": 60}
 LISTING_BLOCKED = {"secret/target", "secret/template"}
+RATE_SEEN: set[str] = set()   # Namen mit Präfix RATE429 liefern beim 1. POST ein 429
 
 
 def envelope(path, results):
@@ -145,6 +146,10 @@ async def post_table(p1: str, p2: str, request: Request):
             return err(400, "folder_id can't be 0")
     if str(body.get("name", "")).startswith("FAIL"):
         return err(500, "entry not found in datasource", -3)
+    name = str(body.get("name", ""))
+    if name.startswith("RATE429") and name not in RATE_SEEN:
+        RATE_SEEN.add(name)
+        return err(429, "Too many requests")
 
     mkey = body.get("name")
     if key in NEXT_ID:

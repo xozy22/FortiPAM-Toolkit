@@ -1,8 +1,11 @@
 """FastAPI-Backend des FortiPAM Toolkits (nur für localhost gedacht)."""
 from __future__ import annotations
 
+import base64
 import copy
 import io
+import json
+import os
 import sys
 import threading
 import time
@@ -12,7 +15,7 @@ from fastapi import Body, FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import excel_io, planner
+from . import excel_io, planner, winsec
 from .fortipam import FortiPAMClient, FortiPAMError
 
 app = FastAPI(title="FortiPAM Toolkit", docs_url=None, redoc_url=None)
@@ -39,6 +42,62 @@ def _require(key: str, message: str):
 
 
 # ======================================================================
+# Gespeichertes Verbindungsprofil (Token DPAPI-verschlüsselt)
+# ======================================================================
+
+def _profile_path() -> Path:
+    base = Path(os.environ.get("APPDATA") or Path.home()) / "FortiPAM-Toolkit"
+    base.mkdir(parents=True, exist_ok=True)
+    return base / "connection.json"
+
+
+def _load_profile() -> dict:
+    try:
+        return json.loads(_profile_path().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def _save_profile(base_url: str, vdom: str, verify_ssl: bool, token: str | None) -> None:
+    profile = {"base_url": base_url, "vdom": vdom, "verify_ssl": verify_ssl}
+    if token and winsec.available():
+        profile["token_enc"] = base64.b64encode(
+            winsec.protect(token.encode("utf-8"))).decode("ascii")
+    _profile_path().write_text(json.dumps(profile, indent=1), encoding="utf-8")
+
+
+def _profile_token(profile: dict) -> str:
+    enc = profile.get("token_enc")
+    if not enc:
+        return ""
+    try:
+        return winsec.unprotect(base64.b64decode(enc)).decode("utf-8")
+    except (OSError, ValueError):
+        return ""
+
+
+@app.get("/api/connection/saved")
+def connection_saved():
+    profile = _load_profile()
+    if not profile:
+        return {}
+    return {"base_url": profile.get("base_url", ""),
+            "vdom": profile.get("vdom", ""),
+            "verify_ssl": bool(profile.get("verify_ssl")),
+            "has_token": bool(profile.get("token_enc")),
+            "dpapi": winsec.available()}
+
+
+@app.post("/api/connection/forget")
+def connection_forget():
+    try:
+        _profile_path().unlink(missing_ok=True)
+    except OSError:
+        pass
+    return {"ok": True}
+
+
+# ======================================================================
 # Verbindung
 # ======================================================================
 
@@ -46,6 +105,13 @@ def _require(key: str, message: str):
 def connect(payload: dict = Body(...)):
     base_url = str(payload.get("base_url") or "").strip()
     token = str(payload.get("token") or "").strip()
+    remember = bool(payload.get("remember"))
+    if not token and payload.get("use_saved_token"):
+        token = _profile_token(_load_profile())
+        if not token:
+            raise HTTPException(status_code=400,
+                                detail="Kein gespeicherter Token vorhanden oder Entschlüsselung fehlgeschlagen.")
+        remember = True   # gespeicherten Token nicht durch die Anmeldung verlieren
     if not base_url or not token:
         raise HTTPException(status_code=400, detail="Basis-URL und API-Token sind erforderlich.")
     if not base_url.lower().startswith(("http://", "https://")):
@@ -76,6 +142,12 @@ def connect(payload: dict = Body(...)):
     STATE.update({"client": client, "conn_info": info, "inventory": None,
                   "plan": None, "extra_templates": set(),
                   "extra_target_names": set()})
+    # Verbindungsdaten sichern; Token nur bei "remember" (DPAPI-verschlüsselt)
+    try:
+        _save_profile(base_url, client.vdom, bool(payload.get("verify_ssl")),
+                      token if remember else None)
+    except OSError:
+        pass
     return info
 
 
@@ -250,14 +322,46 @@ def _excel_public(parsed: dict) -> dict:
     }
 
 
+_XLSX_MEDIA = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+
+def _xlsx_response(data: bytes, filename: str) -> StreamingResponse:
+    return StreamingResponse(
+        io.BytesIO(data), media_type=_XLSX_MEDIA,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 @app.get("/api/excel/sample")
 def excel_sample():
-    data = excel_io.sample_workbook()
-    return StreamingResponse(
-        io.BytesIO(data),
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": 'attachment; filename="FortiPAM_Import_Vorlage.xlsx"'},
-    )
+    return _xlsx_response(excel_io.sample_workbook(), "FortiPAM_Import_Vorlage.xlsx")
+
+
+@app.post("/api/excel/template-generate")
+def excel_template_generate(payload: dict = Body(...)):
+    """Erzeugt eine Import-Vorlage passend zu den gewählten FortiPAM-Templates."""
+    _require("client", "Nicht mit FortiPAM verbunden.")
+    inv = STATE.get("inventory")
+    if inv is None:
+        inv = STATE["inventory"] = _fetch_inventory(STATE["client"])
+    wanted = [str(n) for n in (payload.get("templates") or [])]
+    by_name = {t.get("name"): t for t in inv.get("templates", [])}
+    templates = [by_name[n] for n in wanted if n in by_name]
+    if not templates:
+        raise HTTPException(status_code=400, detail="Keine gültigen Templates gewählt.")
+    data = excel_io.template_workbook(templates)
+    return _xlsx_response(data, "FortiPAM_Import_Vorlage_Templates.xlsx")
+
+
+@app.get("/api/inventory/export")
+def inventory_export():
+    _require("client", "Nicht mit FortiPAM verbunden.")
+    inv = STATE.get("inventory")
+    if inv is None:
+        inv = STATE["inventory"] = _fetch_inventory(STATE["client"])
+    data = excel_io.inventory_workbook(inv)
+    stamp = time.strftime("%Y-%m-%d")
+    return _xlsx_response(data, f"FortiPAM_Inventar_{stamp}.xlsx")
 
 
 # ======================================================================
@@ -324,7 +428,7 @@ def execute():
 
     def worker():
         try:
-            planner.execute_plan(client, plan, job)
+            planner.execute_plan(client, plan, job, lock=JOB_LOCK)
         except Exception as exc:  # unerwartete Fehler sichtbar machen
             job["items"].append({"kind": "system", "name": "Ausführung",
                                  "status": "error", "message": str(exc), "row": None})

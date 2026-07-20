@@ -18,11 +18,33 @@ def check(name, cond, detail=""):
         raise SystemExit(1)
 
 
-# 1) Verbinden
+# 0) 429-Retry des API-Clients (Mock liefert beim 1. Versuch "Too many requests")
+import sys
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parents[1]))
+from app.fortipam import FortiPAMClient  # noqa: E402
+
+cl = FortiPAMClient("http://127.0.0.1:9443", "mocktoken", verify_ssl=False)
+resp = cl.create("secret/target", {"name": "RATE429-test", "template": "x", "class": "Import"})
+check("429-retry", resp.get("status") == "success", str(resp)[:120])
+cl.request("DELETE", "cmdb/secret/target/RATE429-test")
+cl.close()
+
+# 1) Verbinden (mit DPAPI-Speicherung)
 r = c.post(f"{APP}/api/connect", json={
-    "base_url": "http://127.0.0.1:9443", "token": "mocktoken", "verify_ssl": False})
+    "base_url": "http://127.0.0.1:9443", "token": "mocktoken", "verify_ssl": False,
+    "remember": True})
 check("connect", r.status_code == 200, r.text[:200])
 check("connect version", r.json()["version"] == "v1.9.0")
+
+# 1b) Gespeichertes Profil + Wiederverbinden mit gespeichertem Token
+r = c.get(f"{APP}/api/connection/saved")
+saved = r.json()
+check("profil gespeichert", saved.get("has_token") is True
+      and saved.get("base_url") == "http://127.0.0.1:9443", str(saved))
+r = c.post(f"{APP}/api/connect", json={
+    "base_url": "http://127.0.0.1:9443", "token": "", "verify_ssl": False,
+    "use_saved_token": True})
+check("reconnect mit gespeichertem token", r.status_code == 200, r.text[:150])
 
 # 2) Inventar (mit Fallback-Ermittlung)
 r = c.get(f"{APP}/api/inventory")
@@ -42,6 +64,16 @@ r = c.post(f"{APP}/api/templates/add", json={"name": "Gibtsnicht"})
 check("template add 404", r.status_code == 404, r.text[:120])
 r = c.post(f"{APP}/api/templates/add", json={"name": "Cisco Account (SSH)"})
 check("template add ok", r.status_code == 200, r.text[:120])
+
+# 3b) Inventar-Export + Vorlagen-Generator
+r = c.get(f"{APP}/api/inventory/export")
+check("inventar-export", r.status_code == 200 and len(r.content) > 2000
+      and "spreadsheet" in r.headers.get("content-type", ""), str(len(r.content)))
+r = c.post(f"{APP}/api/excel/template-generate",
+           json={"templates": ["Unix Account (SSH Password)", "Windows Account (RDP)"]})
+check("vorlagen-generator", r.status_code == 200 and len(r.content) > 1000)
+r = c.post(f"{APP}/api/excel/template-generate", json={"templates": ["Gibtsnicht"]})
+check("vorlagen-generator 400", r.status_code == 400)
 
 # 4) Beispiel-Excel hochladen
 r = c.get(f"{APP}/api/excel/sample")

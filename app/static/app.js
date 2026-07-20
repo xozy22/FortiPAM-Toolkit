@@ -100,35 +100,50 @@ document.querySelectorAll(".step").forEach((s) =>
 
 /* ==== Verbindung ===================================================== */
 
-function loadSavedConn() {
+/* Gespeichertes Verbindungsprofil (Token liegt DPAPI-verschlüsselt beim Backend) */
+let savedConn = {};
+async function loadSavedConn() {
   try {
-    const saved = JSON.parse(localStorage.getItem("fpt_conn") || "{}");
-    if (saved.url) $("inUrl").value = saved.url;
-    if (saved.vdom) $("inVdom").value = saved.vdom;
-    $("inVerify").checked = !!saved.verify;
-    if (saved.token) { $("inToken").value = saved.token; $("inRemember").checked = true; }
-  } catch (e) { /* egal */ }
+    savedConn = await api("/api/connection/saved") || {};
+  } catch (e) { savedConn = {}; }
+  if (savedConn.base_url) $("inUrl").value = savedConn.base_url;
+  if (savedConn.vdom) $("inVdom").value = savedConn.vdom;
+  $("inVerify").checked = !!savedConn.verify_ssl;
+  $("inRemember").checked = !!savedConn.has_token;
+  $("btnForget").hidden = !savedConn.base_url;
+  $("savedConnNote").innerHTML = savedConn.has_token
+    ? `<p class="hint" style="margin-top:6px">Gespeicherter Token vorhanden – Token-Feld leer
+       lassen, um ihn zu verwenden.</p>`
+    : "";
 }
-loadSavedConn();
+
+$("btnForget").addEventListener("click", async () => {
+  await api("/api/connection/forget", { method: "POST" });
+  savedConn = {};
+  $("savedConnNote").innerHTML = "";
+  $("btnForget").hidden = true;
+  $("inRemember").checked = false;
+  addLog("info", "Gespeicherte Verbindungsdaten gelöscht.");
+  toast("Gespeicherte Daten gelöscht.", "ok");
+});
 
 $("btnConnect").addEventListener("click", async () => {
   const btn = $("btnConnect");
   btn.disabled = true; btn.textContent = "Verbinde …";
   try {
+    const token = $("inToken").value.trim();
     const info = await api("/api/connect", {
       method: "POST",
       body: {
         base_url: $("inUrl").value.trim(),
-        token: $("inToken").value.trim(),
+        token,
         verify_ssl: $("inVerify").checked,
         vdom: $("inVdom").value.trim(),
+        remember: $("inRemember").checked,
+        use_saved_token: !token && !!savedConn.has_token,
       },
     });
-    const save = { url: $("inUrl").value.trim(), vdom: $("inVdom").value.trim(),
-                   verify: $("inVerify").checked };
-    if ($("inRemember").checked) save.token = $("inToken").value.trim();
-    localStorage.setItem("fpt_conn", JSON.stringify(save));
-
+    loadSavedConn();
     setConnected(true, info);
     $("connResult").innerHTML = `
       <div class="conn-card">
@@ -194,6 +209,8 @@ async function loadInventory(refresh = false) {
     }
     renderInvTiles();
     renderInvTable();
+    $("tplGenSel").innerHTML = inv.templates.map((t) =>
+      `<option>${esc(t.name)}</option>`).join("");
     addLog("info", `Inventar geladen: ${inv.targets.length} Targets, ${inv.secrets.length} Secrets, ` +
       `${inv.folders.length} Ordner, ${inv.templates.length} Templates`);
     if (S.upload) buildMappingUI();
@@ -577,6 +594,187 @@ function renderFieldMaps() {
   }
 }
 
+/* ==== Vorlagen-Generator ============================================ */
+
+function downloadBlob(blob, filename) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+$("btnTplGen").addEventListener("click", async () => {
+  const chosen = [...$("tplGenSel").selectedOptions].map((o) => o.value);
+  if (!chosen.length) { toast("Bitte mindestens ein Template auswählen.", "err"); return; }
+  try {
+    const resp = await fetch("/api/excel/template-generate", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ templates: chosen }),
+    });
+    if (!resp.ok) {
+      const data = await resp.json().catch(() => ({}));
+      throw new Error(data.detail || `HTTP ${resp.status}`);
+    }
+    downloadBlob(await resp.blob(), "FortiPAM_Import_Vorlage_Templates.xlsx");
+    addLog("ok", `Vorlage für ${chosen.length} Template(s) erzeugt.`);
+  } catch (e) {
+    toast(e.message, "err");
+  }
+});
+
+/* ==== Mapping-Profile =============================================== */
+
+$("btnProfileSave").addEventListener("click", () => {
+  const profile = { version: 1, saved: new Date().toISOString(),
+                    mapping: collectMapping() };
+  downloadBlob(new Blob([JSON.stringify(profile, null, 2)],
+                        { type: "application/json" }),
+               "fortipam-mapping-profil.json");
+  addLog("ok", "Mapping-Profil gespeichert.");
+});
+
+$("btnProfileLoad").addEventListener("click", () => $("profileFile").click());
+$("profileFile").addEventListener("change", (e) => {
+  const file = e.target.files[0];
+  e.target.value = "";
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const data = JSON.parse(reader.result);
+      const mapping = data.mapping || data;
+      const warnings = applyMapping(mapping);
+      addLog("ok", `Mapping-Profil '${file.name}' geladen.`);
+      toast(warnings.length
+        ? `Profil geladen – ${warnings.length} Hinweis(e), siehe Protokoll.`
+        : "Profil geladen.", warnings.length ? "err" : "ok");
+      warnings.forEach((w) => addLog("warn", "Profil: " + w));
+    } catch (err) {
+      toast("Profil konnte nicht gelesen werden: " + err.message, "err");
+    }
+  };
+  reader.readAsText(file);
+});
+
+/* Quelle in ein srcSelect-Paar zurückschreiben */
+function setSrc(id, src, warnings) {
+  const sel = $(id);
+  if (!sel) return;
+  const fx = $(id + "_fx");
+  if (!src || !src.type) { sel.value = ""; fx.hidden = true; return; }
+  if (src.type === "column") {
+    const want = "col:" + src.value;
+    if ([...sel.options].some((o) => o.value === want)) {
+      sel.value = want;
+    } else {
+      warnings.push(`Spalte '${src.value}' existiert in dieser Datei nicht (${id})`);
+      sel.value = "";
+    }
+    fx.hidden = true;
+  } else if (src.type === "fixed") {
+    const xf = "xfix:" + src.value;
+    if ([...sel.options].some((o) => o.value === xf)) {
+      sel.value = xf; fx.hidden = true;
+    } else {
+      sel.value = "fixed"; fx.hidden = false; fx.value = src.value;
+    }
+  }
+}
+
+/* Ein gespeichertes Mapping auf die aktuelle UI anwenden */
+function applyMapping(m) {
+  const warnings = [];
+  if (!S.upload || !S.inventory) { warnings.push("Keine Datei/Verbindung geladen"); return warnings; }
+  const opts = m.options || {};
+  $("optTargets").checked = !!opts.create_targets;
+  $("optSecrets").checked = !!opts.create_secrets;
+  $("optAutoFolders").checked = !!opts.auto_create_folders;
+  $("optTargets").onchange(); $("optSecrets").onchange();
+
+  // Secret-Typ-Quelle
+  const tpl = (m.secret || {}).template || {};
+  if (tpl.type === "fixed") {
+    $("tplSource").value = "fixed";
+    renderTplValueMap();
+    if ([...$("tplFixed").options].some((o) => o.value === tpl.value || o.text === tpl.value)) {
+      $("tplFixed").value = tpl.value;
+    } else {
+      warnings.push(`Template '${tpl.value}' nicht verfügbar`);
+    }
+  } else if (tpl.type === "column") {
+    const want = "col:" + tpl.value;
+    if ([...$("tplSource").options].some((o) => o.value === want)) {
+      $("tplSource").value = want;
+      renderTplValueMap();
+      const vmap = {};
+      for (const [k, v] of Object.entries(tpl.value_map || {})) vmap[k.toLowerCase()] = v;
+      document.querySelectorAll(".vmap-sel").forEach((sel) => {
+        const mapped = vmap[(sel.dataset.raw || "").toLowerCase()];
+        if (mapped === undefined) return;
+        if ([...sel.options].some((o) => o.value === mapped || o.text === mapped)) {
+          sel.value = mapped;
+        } else {
+          warnings.push(`Template '${mapped}' (für '${sel.dataset.raw}') nicht verfügbar`);
+        }
+      });
+    } else {
+      warnings.push(`Secret-Typ-Spalte '${tpl.value}' existiert nicht`);
+    }
+  }
+  renderFieldMaps();
+
+  // Ordner
+  const fol = (m.secret || {}).folder || {};
+  if (fol.type) {
+    $("folderMode").value = fol.type;
+    $("folderMode").onchange();
+    if (fol.type === "fixed_id") {
+      if ([...$("folderFixed").options].some((o) => o.value === String(fol.value))) {
+        $("folderFixed").value = String(fol.value);
+      } else {
+        warnings.push(`Ordner-ID ${fol.value} existiert nicht mehr`);
+      }
+    } else if (fol.type === "fixed_path") {
+      $("folderPath").value = fol.value || "";
+    } else if (fol.type === "column_path") {
+      if ([...$("folderCol").options].some((o) => o.value === fol.value)) {
+        $("folderCol").value = fol.value;
+      } else {
+        warnings.push(`Ordner-Spalte '${fol.value}' existiert nicht`);
+      }
+      if ([...$("folderBase").options].some((o) => o.value === String(fol.base ?? 0))) {
+        $("folderBase").value = String(fol.base ?? 0);
+      }
+    }
+  }
+  if (opts.root_folder_owner &&
+      [...$("folderOwner").options].some((o) => o.value === opts.root_folder_owner)) {
+    $("folderOwner").value = opts.root_folder_owner;
+  }
+
+  // Target-/Secret-Basisfelder
+  const t = m.target || {};
+  setSrc("tName", t.name, warnings); setSrc("tAddr", t.address, warnings);
+  setSrc("tClass", t.class, warnings); setSrc("tDomain", t.domain, warnings);
+  setSrc("tUrl", t.url, warnings); setSrc("tDesc", t.description, warnings);
+  const sec = m.secret || {};
+  setSrc("sName", sec.name, warnings); setSrc("sDesc", sec.description, warnings);
+
+  // Template-Felder
+  document.querySelectorAll(".tpl-card").forEach((card) => {
+    const tplName = card.dataset.tpl;
+    const tplObj = S.inventory.templates.find((x) => x.name === tplName);
+    const fmap = (sec.fields || {})[tplName] || {};
+    if (!tplObj) return;
+    card.querySelectorAll("select[id^=fmap_]").forEach((sel, i) => {
+      const f = (tplObj.field || [])[i];
+      if (f && fmap[f.name] !== undefined) setSrc(sel.id, fmap[f.name], warnings);
+    });
+  });
+  return warnings;
+}
+
 /* ==== Mapping einsammeln & Plan ====================================== */
 
 function collectMapping() {
@@ -815,6 +1013,7 @@ $("btnLogSave").addEventListener("click", () => {
 
 addLog("info", "FortiPAM Toolkit gestartet.");
 (async () => {
+  await loadSavedConn();
   try {
     const st = await api("/api/status");
     if (st.connected && st.conn_info) {

@@ -7,8 +7,12 @@ ungekürzte Fassung bleibt im Server-State und wird bei der Ausführung genutzt.
 from __future__ import annotations
 
 import copy
+import threading
+from concurrent.futures import ThreadPoolExecutor
 
 from .fortipam import FortiPAMClient, FortiPAMError
+
+EXECUTE_CONCURRENCY = 6   # parallele Schreibzugriffe (Ordner bleiben seriell)
 
 MASK = "••••••"
 SENSITIVE_TYPES = {"password", "passphrase", "private-key"}
@@ -363,9 +367,16 @@ def build_plan(mapping: dict, rows: list[dict], inventory: dict,
 # Plan ausführen
 # ======================================================================
 
-def execute_plan(client: FortiPAMClient, plan: dict, job: dict) -> None:
-    """Führt den Plan aus und aktualisiert `job` (wird nur vom Worker-Thread beschrieben)."""
+def execute_plan(client: FortiPAMClient, plan: dict, job: dict,
+                 lock: threading.Lock | None = None,
+                 concurrency: int = EXECUTE_CONCURRENCY) -> None:
+    """Führt den Plan aus und aktualisiert `job`.
+
+    Ordner werden seriell angelegt (Eltern-Kind-Abhängigkeit), Targets und
+    Secrets parallel mit begrenzter Nebenläufigkeit.
+    """
     path_to_id = dict(plan.get("_path_to_id") or {})
+    lock = lock or threading.Lock()
 
     todo_folders = plan.get("folders", [])
     todo_targets = [t for t in plan.get("targets", []) if t["action"] == "create"]
@@ -373,10 +384,11 @@ def execute_plan(client: FortiPAMClient, plan: dict, job: dict) -> None:
     job["total"] = len(todo_folders) + len(todo_targets) + len(todo_secrets)
 
     def push(kind: str, name: str, status: str, message: str = "", row: int | None = None):
-        job["items"].append({"kind": kind, "name": name, "status": status,
-                             "message": message, "row": row})
-        if status != "info":
-            job["done"] += 1
+        with lock:
+            job["items"].append({"kind": kind, "name": name, "status": status,
+                                 "message": message, "row": row})
+            if status != "info":
+                job["done"] += 1
 
     # ---- Ordner (in geplanter Reihenfolge: Eltern vor Kindern) -------
     # FortiPAM verlangt diese Felder explizit (POST wendet keine Defaults an).
@@ -416,27 +428,29 @@ def execute_plan(client: FortiPAMClient, plan: dict, job: dict) -> None:
         except FortiPAMError as exc:
             push("folder", f["path"], "error", str(exc))
 
-    # ---- Targets ------------------------------------------------------
-    for t in todo_targets:
+    # ---- Targets (parallel) ------------------------------------------
+    def create_target(t: dict):
         if job.get("cancel"):
-            break
+            push("target", t["name"], "error", "abgebrochen")
+            return
         try:
             client.create("secret/target", t["body"])
             push("target", t["name"], "ok", "angelegt")
         except FortiPAMError as exc:
             push("target", t["name"], "error", str(exc))
 
-    # ---- Secrets ------------------------------------------------------
-    for s in todo_secrets:
+    # ---- Secrets (parallel) ------------------------------------------
+    def create_secret(s: dict):
         if job.get("cancel"):
-            break
+            push("secret", s["name"], "error", "abgebrochen", s.get("row"))
+            return
         fid = s.get("folder_id")
         if fid is None:
             fid = path_to_id.get(_norm(s["folder_path"]))
         if fid is None:
             push("secret", s["name"], "error",
                  f"Ordner '{s['folder_path']}' wurde nicht angelegt", s.get("row"))
-            continue
+            return
         body = dict(s["body"])
         body["folder"] = int(fid)
         try:
@@ -444,6 +458,11 @@ def execute_plan(client: FortiPAMClient, plan: dict, job: dict) -> None:
             push("secret", s["name"], "ok", f"angelegt in '{s['folder_path']}'", s.get("row"))
         except FortiPAMError as exc:
             push("secret", s["name"], "error", str(exc), s.get("row"))
+
+    with ThreadPoolExecutor(max_workers=max(1, concurrency)) as pool:
+        # Targets vollständig vor den Secrets (Secrets referenzieren Targets)
+        list(pool.map(create_target, todo_targets))
+        list(pool.map(create_secret, todo_secrets))
 
     job["finished"] = True
     job["running"] = False

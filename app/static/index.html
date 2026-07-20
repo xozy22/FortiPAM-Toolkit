@@ -38,7 +38,7 @@
       <span class="rail-num">04</span><span>Protokoll</span>
     </button>
     <div class="rail-foot">
-      lokal · 127.0.0.1<br>Token bleibt im Speicher
+      lokal · 127.0.0.1<br>Token: RAM, optional DPAPI
     </div>
   </nav>
 
@@ -69,12 +69,14 @@
           </div>
           <label class="inline">
             <input type="checkbox" id="inRemember">
-            <span>Token lokal merken <em class="warn-note">(unverschlüsselt im Browser-Speicher)</em></span>
+            <span>Zugangsdaten sicher speichern <em class="dim">(Windows-Kontoverschlüsselung, DPAPI)</em></span>
           </label>
+          <div id="savedConnNote"></div>
         </div>
         <div class="btn-row">
           <button class="btn primary" id="btnConnect">Verbinden</button>
           <button class="btn ghost" id="btnDisconnect" disabled>Trennen</button>
+          <button class="btn ghost" id="btnForget" hidden>Gespeicherte Daten löschen</button>
         </div>
         <div class="conn-result" id="connResult"></div>
         <p class="hint">
@@ -89,7 +91,10 @@
     <section class="view" id="view-inventar">
       <div class="view-head">
         <h1>Inventar <span class="h-dim">Bestand auf dem FortiPAM</span></h1>
-        <button class="btn ghost" id="btnInvRefresh">Neu laden</button>
+        <div class="btn-row" style="margin-top:0">
+          <a class="btn ghost" href="/api/inventory/export">Export (.xlsx)</a>
+          <button class="btn ghost" id="btnInvRefresh">Neu laden</button>
+        </div>
       </div>
       <div class="tiles" id="invTiles"></div>
       <div class="subtabs" id="invTabs">
@@ -129,6 +134,11 @@
           </div>
           <div class="btn-row">
             <a class="btn ghost" href="/api/excel/sample">Beispiel-Vorlage herunterladen</a>
+          </div>
+          <div class="form-row" style="margin-top:14px">
+            <span class="lbl-inline" title="Mehrfachauswahl mit Strg/Umschalt">Vorlage passend zu Templates</span>
+            <select id="tplGenSel" multiple size="4" style="min-width:300px"></select>
+            <button class="btn ghost" id="btnTplGen">Vorlage erzeugen</button>
           </div>
           <div id="uploadInfo"></div>
           <div class="table-wrap" id="previewTable"></div>
@@ -219,6 +229,9 @@
 
         <div class="btn-row">
           <button class="btn primary" id="btnPlan">Vorschau berechnen →</button>
+          <button class="btn ghost" id="btnProfileSave">Mapping-Profil speichern</button>
+          <button class="btn ghost" id="btnProfileLoad">Mapping-Profil laden</button>
+          <input type="file" id="profileFile" accept=".json" hidden>
         </div>
       </div>
 

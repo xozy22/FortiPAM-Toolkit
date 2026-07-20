@@ -1,7 +1,12 @@
 """Schlanker REST-Client für die FortiPAM CMDB-API (FortiOS-Stil, /api/v2)."""
 from __future__ import annotations
 
+import time
+
 import httpx
+
+_RETRY_STATUS = {429}
+_RETRY_DELAYS = (1.0, 2.0, 4.0)   # Backoff bei "Too many requests"
 
 
 class FortiPAMError(Exception):
@@ -45,6 +50,12 @@ class FortiPAMClient:
         url = f"{self.base_url}/api/v2/{path.lstrip('/')}"
         try:
             resp = self._client.request(method, url, params=params, json=body)
+            # Rate-Limit: mit Backoff erneut versuchen
+            for delay in _RETRY_DELAYS:
+                if resp.status_code not in _RETRY_STATUS:
+                    break
+                time.sleep(delay)
+                resp = self._client.request(method, url, params=params, json=body)
         except httpx.ConnectError as exc:
             raise FortiPAMError(f"Verbindung fehlgeschlagen: {exc}") from exc
         except httpx.TimeoutException as exc:

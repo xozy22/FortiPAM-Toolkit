@@ -15,11 +15,17 @@ Fortinet **FortiPAM** (getestet gegen API v1.9.0, Build 1751 — Mock und
 Live-Gerät). Kernfunktionen:
 
 - Bestand auslesen (Targets, Secrets, Ordner, Templates, Klassifizierungen)
-- Excel-Datei (.xlsx) einlesen
-- Spalten-Mapping inkl. Zuordnung *Secret-Typ → FortiPAM-Template*
-- Bulk-Erstellung von Targets und Secrets (optional inkl. fehlender Ordner)
+  und als **Excel exportieren**
+- Excel-Datei (.xlsx) einlesen; **Vorlagen-Generator** passend zu den
+  Templates des eigenen FortiPAM
+- Spalten-Mapping inkl. Zuordnung *Secret-Typ → FortiPAM-Template*;
+  Mapping als **Profil** speicher- und wiederladbar (für wiederkehrende Importe)
+- Bulk-Erstellung von Targets und Secrets (optional inkl. fehlender Ordner),
+  **parallelisiert** mit automatischem Retry bei Rate-Limits (HTTP 429)
 - Duplikat-Erkennung: bereits vorhandene Objekte werden übersprungen
 - Vorschau (Plan) vor jeder Änderung, Live-Protokoll bei der Ausführung
+- Optionale Token-Speicherung, **DPAPI-verschlüsselt** an das
+  Windows-Benutzerkonto gebunden
 
 Die App läuft komplett lokal (`127.0.0.1`), die Oberfläche im Browser.
 
@@ -41,8 +47,10 @@ Die App läuft komplett lokal (`127.0.0.1`), die Oberfläche im Browser.
    in der App eintragen.
 
 Der Token wird standardmäßig **nur im Arbeitsspeicher** gehalten. Die Option
-„Token lokal merken" speichert ihn unverschlüsselt im Browser-Speicher —
-nur auf vertrauenswürdigen Rechnern verwenden.
+„Zugangsdaten sicher speichern" legt ihn **DPAPI-verschlüsselt** unter
+`%APPDATA%\FortiPAM-Toolkit\connection.json` ab — entschlüsselbar nur vom
+angemeldeten Windows-Benutzer auf diesem Rechner. Über „Gespeicherte Daten
+löschen" wird die Ablage wieder entfernt.
 
 ## Excel-Format
 
