@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FortiPAM Toolkit</title>
+<link rel="stylesheet" href="/static/style.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23101315'/%3E%3Crect x='6' y='6' width='20' height='6' fill='%23ff6a2b'/%3E%3Crect x='6' y='14' width='14' height='4' fill='%23d6dbdd'/%3E%3Crect x='6' y='20' width='20' height='6' fill='%232a3136'/%3E%3C/svg%3E">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <div class="brand-mark"></div>
+    <div class="brand-text">
+      <span class="brand-name">FORTIPAM</span><span class="brand-sub">// TOOLKIT</span>
+    </div>
+  </div>
+  <div class="conn-badge" id="connBadge">
+    <span class="led" id="connLed"></span>
+    <span id="connText">Nicht verbunden</span>
+  </div>
+</header>
+
+<div class="layout">
+
+  <nav class="rail">
+    <button class="rail-item active" data-view="verbindung">
+      <span class="rail-num">01</span><span>Verbindung</span>
+    </button>
+    <button class="rail-item" data-view="inventar" disabled>
+      <span class="rail-num">02</span><span>Inventar</span>
+    </button>
+    <button class="rail-item" data-view="import" disabled>
+      <span class="rail-num">03</span><span>Bulk-Import</span>
+    </button>
+    <button class="rail-item" data-view="protokoll">
+      <span class="rail-num">04</span><span>Protokoll</span>
+    </button>
+    <div class="rail-foot">
+      lokal · 127.0.0.1<br>Token bleibt im Speicher
+    </div>
+  </nav>
+
+  <main class="content">
+
+    <!-- ===================== VERBINDUNG ===================== -->
+    <section class="view active" id="view-verbindung">
+      <h1>Verbindung <span class="h-dim">zum FortiPAM</span></h1>
+      <div class="panel narrow">
+        <div class="form-grid">
+          <label>
+            <span class="lbl">FortiPAM-URL</span>
+            <input type="text" id="inUrl" placeholder="https://pam.example.com" autocomplete="off" spellcheck="false">
+          </label>
+          <label>
+            <span class="lbl">API-Token</span>
+            <input type="password" id="inToken" placeholder="API-Schlüssel des REST-API-Admins" autocomplete="off">
+          </label>
+          <div class="form-row">
+            <label class="inline">
+              <input type="checkbox" id="inVerify">
+              <span>TLS-Zertifikat prüfen</span>
+            </label>
+            <label class="inline" title="Nur nötig, wenn VDOMs aktiviert sind">
+              <span class="lbl-inline">VDOM</span>
+              <input type="text" id="inVdom" placeholder="optional" class="short">
+            </label>
+          </div>
+          <label class="inline">
+            <input type="checkbox" id="inRemember">
+            <span>Token lokal merken <em class="warn-note">(unverschlüsselt im Browser-Speicher)</em></span>
+          </label>
+        </div>
+        <div class="btn-row">
+          <button class="btn primary" id="btnConnect">Verbinden</button>
+          <button class="btn ghost" id="btnDisconnect" disabled>Trennen</button>
+        </div>
+        <div class="conn-result" id="connResult"></div>
+        <p class="hint">
+          Der API-Token gehört zu einem REST-API-Administrator (FortiPAM:
+          <span class="mono">System &rsaquo; Administrator &rsaquo; REST API Admin</span>) mit einem
+          Zugriffsprofil, das Lese-/Schreibrechte auf Secrets besitzt. Trusted Hosts beachten.
+        </p>
+      </div>
+    </section>
+
+    <!-- ===================== INVENTAR ===================== -->
+    <section class="view" id="view-inventar">
+      <div class="view-head">
+        <h1>Inventar <span class="h-dim">Bestand auf dem FortiPAM</span></h1>
+        <button class="btn ghost" id="btnInvRefresh">Neu laden</button>
+      </div>
+      <div class="tiles" id="invTiles"></div>
+      <div class="subtabs" id="invTabs">
+        <button data-tab="targets" class="active">Targets</button>
+        <button data-tab="secrets">Secrets</button>
+        <button data-tab="folders">Ordner</button>
+        <button data-tab="templates">Templates</button>
+        <button data-tab="class_tags">Klassifizierungen</button>
+      </div>
+      <div class="panel">
+        <input type="search" id="invSearch" placeholder="Filtern …" class="search">
+        <div class="table-wrap" id="invTable"></div>
+      </div>
+    </section>
+
+    <!-- ===================== IMPORT ===================== -->
+    <section class="view" id="view-import">
+      <h1>Bulk-Import <span class="h-dim">Excel → Targets &amp; Secrets</span></h1>
+
+      <div class="stepper">
+        <button class="step active" data-step="1"><span>1</span>Datei</button>
+        <button class="step" data-step="2" disabled><span>2</span>Mapping</button>
+        <button class="step" data-step="3" disabled><span>3</span>Vorschau</button>
+        <button class="step" data-step="4" disabled><span>4</span>Ausführung</button>
+      </div>
+
+      <!-- Schritt 1: Datei -->
+      <div class="istep active" id="istep-1">
+        <div class="panel">
+          <div class="drop" id="dropZone">
+            <div class="drop-inner">
+              <div class="drop-icon">⬡</div>
+              <p><strong>Excel-Datei hierher ziehen</strong> oder klicken zum Auswählen</p>
+              <p class="dim">.xlsx · erste nicht-leere Zeile = Spaltenüberschriften</p>
+            </div>
+            <input type="file" id="fileInput" accept=".xlsx,.xlsm" hidden>
+          </div>
+          <div class="btn-row">
+            <a class="btn ghost" href="/api/excel/sample">Beispiel-Vorlage herunterladen</a>
+          </div>
+          <div id="uploadInfo"></div>
+          <div class="table-wrap" id="previewTable"></div>
+        </div>
+      </div>
+
+      <!-- Schritt 2: Mapping -->
+      <div class="istep" id="istep-2">
+        <div class="panel">
+          <h2>Was soll erstellt werden?</h2>
+          <div class="opt-row" id="mapOptions">
+            <label class="inline"><input type="checkbox" id="optTargets" checked><span>Targets erstellen</span></label>
+            <label class="inline"><input type="checkbox" id="optSecrets" checked><span>Secrets erstellen</span></label>
+            <label class="inline"><input type="checkbox" id="optAutoFolders"><span>Fehlende Ordner automatisch anlegen</span></label>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h2>Secret-Typ <span class="h-dim">→ FortiPAM-Template</span></h2>
+          <div id="tplListingNote"></div>
+          <div class="form-row">
+            <label class="inline">
+              <span class="lbl-inline">Quelle</span>
+              <select id="tplSource"></select>
+            </label>
+            <label class="inline" id="tplFixedWrap" hidden>
+              <span class="lbl-inline">Template</span>
+              <select id="tplFixed"></select>
+            </label>
+          </div>
+          <div id="tplValueMap"></div>
+          <div class="form-row" style="margin-top:12px">
+            <label class="inline">
+              <span class="lbl-inline">Weiteres Template laden</span>
+              <input type="text" id="tplAddName" placeholder="exakter Template-Name" class="mono" style="width:260px">
+            </label>
+            <button class="btn ghost" id="btnTplAdd">Laden</button>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h2>Ziel-Ordner <span class="h-dim">für Secrets</span></h2>
+          <div class="form-row">
+            <label class="inline">
+              <span class="lbl-inline">Modus</span>
+              <select id="folderMode">
+                <option value="fixed_id">Fester Ordner (vorhanden)</option>
+                <option value="fixed_path">Fester Pfad (wird ggf. angelegt)</option>
+                <option value="column_path">Aus Spalte (Pfad, z. B. Linux/Prod)</option>
+              </select>
+            </label>
+            <label class="inline" id="folderFixedWrap">
+              <span class="lbl-inline">Ordner</span>
+              <select id="folderFixed"></select>
+            </label>
+            <label class="inline" id="folderPathWrap" hidden>
+              <span class="lbl-inline">Pfad</span>
+              <input type="text" id="folderPath" placeholder="z. B. Import/2026" class="mono" style="width:220px">
+            </label>
+            <label class="inline" id="folderColWrap" hidden>
+              <span class="lbl-inline">Spalte</span>
+              <select id="folderCol"></select>
+            </label>
+            <label class="inline" id="folderBaseWrap" hidden>
+              <span class="lbl-inline">Basisordner</span>
+              <select id="folderBase"></select>
+            </label>
+            <label class="inline" id="folderOwnerWrap" hidden>
+              <span class="lbl-inline" title="Pflicht, wenn Ordner direkt unter Root angelegt werden">Owner neuer Root-Ordner</span>
+              <select id="folderOwner"></select>
+            </label>
+          </div>
+          <p class="hint" style="margin-top:10px">Hinweis: Secrets können nicht direkt im
+            Root-Ordner liegen. Neue Ordner direkt unter Root benötigen einen Owner.</p>
+        </div>
+
+        <div class="cols2">
+          <div class="panel" id="panelTarget">
+            <h2>Target-Felder</h2>
+            <div class="map-grid" id="mapTarget"></div>
+          </div>
+          <div class="panel" id="panelSecret">
+            <h2>Secret-Felder</h2>
+            <div class="map-grid" id="mapSecretBase"></div>
+            <div id="mapSecretFields"></div>
+          </div>
+        </div>
+
+        <div class="btn-row">
+          <button class="btn primary" id="btnPlan">Vorschau berechnen →</button>
+        </div>
+      </div>
+
+      <!-- Schritt 3: Vorschau -->
+      <div class="istep" id="istep-3">
+        <div class="tiles" id="planTiles"></div>
+        <div id="planWarnings"></div>
+        <div class="panel">
+          <div class="table-wrap" id="planTable"></div>
+        </div>
+        <div class="btn-row">
+          <button class="btn ghost" id="btnBackMapping">← Mapping anpassen</button>
+          <button class="btn primary" id="btnExecute">Jetzt erstellen</button>
+        </div>
+      </div>
+
+      <!-- Schritt 4: Ausführung -->
+      <div class="istep" id="istep-4">
+        <div class="panel">
+          <div class="progress-head">
+            <h2 id="execTitle">Ausführung läuft …</h2>
+            <span class="mono" id="execCount"></span>
+          </div>
+          <div class="progress"><div class="progress-fill" id="execBar"></div></div>
+          <div class="console" id="execLog"></div>
+          <div class="btn-row">
+            <button class="btn ghost" id="btnCancel">Abbrechen</button>
+            <button class="btn primary" id="btnExecDone" hidden>Fertig – Inventar aktualisieren</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== PROTOKOLL ===================== -->
+    <section class="view" id="view-protokoll">
+      <div class="view-head">
+        <h1>Protokoll <span class="h-dim">dieser Sitzung</span></h1>
+        <button class="btn ghost" id="btnLogSave">Als Datei speichern</button>
+      </div>
+      <div class="panel">
+        <div class="console tall" id="sessionLog"></div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<div class="toasts" id="toasts"></div>
+<script src="/static/app.js"></script>
+</body>
+</html>
