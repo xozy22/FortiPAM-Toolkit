@@ -66,6 +66,7 @@ RATE_SEEN: set[str] = set()   # Namen mit Präfix RATE429 liefern beim 1. POST e
 def envelope(path, results):
     return {"http_method": "GET", "results": results, "status": "success",
             "http_status": 200, "vdom": "root", "path": path,
+            "size": len(results), "matched_count": len(results),
             "serial": "FPAMMOCK00000001", "version": "v1.9.0", "build": 1751}
 
 

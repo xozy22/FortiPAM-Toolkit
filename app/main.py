@@ -204,9 +204,9 @@ def _probe_by_names(client: FortiPAMClient, path: str, names: list[str]) -> list
 
 
 def _fetch_inventory(client: FortiPAMClient) -> dict:
-    secrets, _ = client.list_table(
+    secrets, secrets_env = client.list_table(
         "secret/database", fmt="id|name|folder|template|target|description")
-    folders, _ = client.list_table("secret/folder")
+    folders, folders_env = client.list_table("secret/folder")
     class_tags, _ = client.list_table("secret/classification-tag")
 
     # ---- Targets: Listing versuchen, sonst über bekannte Namen -------
@@ -260,6 +260,11 @@ def _fetch_inventory(client: FortiPAMClient) -> dict:
         "owners": owners,
         "target_listing": target_listing,
         "template_listing": template_listing,
+        # Envelope-Feld "size" = Gesamtanzahl in der Tabelle. Liegt sie über
+        # der Anzahl sichtbarer Einträge, fehlen dem API-User Berechtigungen
+        # (FortiPAM filtert Secrets/Ordner pro Benutzer).
+        "totals": {"secrets": secrets_env.get("size"),
+                   "folders": folders_env.get("size")},
         "fetched_at": time.strftime("%H:%M:%S"),
     }
 

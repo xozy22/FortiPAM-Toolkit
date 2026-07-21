@@ -48,6 +48,16 @@ Die App läuft komplett lokal (`127.0.0.1`), die Oberfläche im Browser.
 4. Beim Erzeugen wird der **API-Schlüssel** einmalig angezeigt — diesen Token
    in der App eintragen.
 
+**Wichtig — Ordner-/Secret-Berechtigungen:** FortiPAM filtert Secrets und
+Ordner **pro Benutzer** (unabhängig vom Administratorprofil!). Der API-User
+sieht nur Ordner/Secrets, auf die er per `user-permission` berechtigt ist.
+Damit das Toolkit bestehende Bestände sieht: In der GUI den obersten Ordnern
+unter *Permissions* den API-User (oder eine Gruppe mit ihm) mit Ordner- und
+Secret-Berechtigung hinzufügen — Unterordner erben, sofern Vererbung aktiv
+ist. Das Inventar der App zeigt „sichtbar / gesamt" an und warnt, wenn dem
+API-User Einträge fehlen. Vom Toolkit selbst angelegte Root-Ordner bekommen
+den API-User automatisch als Owner.
+
 Der Token wird standardmäßig **nur im Arbeitsspeicher** gehalten. Die Option
 „Zugangsdaten sicher speichern" legt ihn **DPAPI-verschlüsselt** unter
 `%APPDATA%\FortiPAM-Toolkit\connection.json` ab — entschlüsselbar nur vom

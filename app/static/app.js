@@ -222,10 +222,16 @@ async function loadInventory(refresh = false) {
 
 function renderInvTiles() {
   const inv = S.inventory;
+  const tot = inv.totals || {};
+  const withTotal = (visible, total) =>
+    (total != null && total > visible)
+      ? `${visible}<span class="h-dim"> / ${total}</span>` : String(visible);
+  const secHidden = tot.secrets != null && tot.secrets > inv.secrets.length;
+  const folHidden = tot.folders != null && tot.folders > inv.folders.length;
   $("invTiles").innerHTML = `
     <div class="tile"><div class="num">${inv.targets.length}</div><div class="cap">Targets</div></div>
-    <div class="tile"><div class="num">${inv.secrets.length}</div><div class="cap">Secrets</div></div>
-    <div class="tile dim"><div class="num">${inv.folders.length}</div><div class="cap">Ordner</div></div>
+    <div class="tile ${secHidden ? "warn" : ""}"><div class="num">${withTotal(inv.secrets.length, tot.secrets)}</div><div class="cap">Secrets sichtbar</div></div>
+    <div class="tile ${folHidden ? "warn" : "dim"}"><div class="num">${withTotal(inv.folders.length, tot.folders)}</div><div class="cap">Ordner sichtbar</div></div>
     <div class="tile dim"><div class="num">${inv.templates.length}</div><div class="cap">Templates</div></div>
     <div class="tile dim"><div class="num">${inv.class_tags.length}</div><div class="cap">Klassifizierungen</div></div>`;
 }
@@ -238,6 +244,17 @@ function renderInvTable() {
     ? data.filter((r) => cols.some((c) => String(r[c.k] ?? "").toLowerCase().includes(q)))
     : data;
   let note = "";
+  const tot = S.inventory.totals || {};
+  if ((S.invTab === "secrets" && tot.secrets != null && tot.secrets > S.inventory.secrets.length) ||
+      (S.invTab === "folders" && tot.folders != null && tot.folders > S.inventory.folders.length)) {
+    const total = S.invTab === "secrets" ? tot.secrets : tot.folders;
+    const visible = data.length;
+    note = `<div class="notice">Das Gerät meldet insgesamt <b>${total}</b> Einträge, für den
+      API-User sichtbar: <b>${visible}</b>. FortiPAM filtert Secrets und Ordner pro Benutzer —
+      dem API-User fehlen Berechtigungen. Abhilfe: In der FortiPAM-GUI den betroffenen Ordnern
+      unter <span class="mono">Permissions</span> den API-User (z. B. „api") mit Ordner- und
+      Secret-Berechtigung hinzufügen.</div>`;
+  }
   if (S.invTab === "targets" && S.inventory.target_listing === false) {
     note = `<div class="notice">Dieses FortiPAM erlaubt kein Auflisten von Targets über die
       REST-API. Angezeigt werden Targets, die über Secrets referenziert oder in dieser

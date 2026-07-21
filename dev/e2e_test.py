@@ -64,6 +64,8 @@ check("inventory templates gelistet", len(inv["templates"]) == 3,
       str([t.get("name") for t in inv["templates"]]))
 check("inventory owners", "api" in inv["owners"], str(inv["owners"]))
 check("inventory folder path", any(f["path"] == "Linux/Produktion" for f in inv["folders"]))
+check("inventory totals", inv["totals"]["secrets"] == len(inv["secrets"])
+      and inv["totals"]["folders"] == len(inv["folders"]), str(inv["totals"]))
 
 # 3) Template-Nachladen
 r = c.post(f"{APP}/api/templates/add", json={"name": "Gibtsnicht"})
