@@ -186,6 +186,19 @@ input[type=checkbox] { accent-color: var(--accent); width: 15px; height: 15px; }
 
 /* ==== Tabellen ======================================================= */
 .search { max-width: 320px; margin-bottom: 14px; }
+
+/* ==== Inventar-Filterleiste ========================================= */
+.filter-bar {
+  display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+  margin-bottom: 14px;
+}
+.filter-bar .search { margin-bottom: 0; flex: 1 1 260px; min-width: 220px; }
+.filter-bar select {
+  min-width: 130px; max-width: 220px;
+  text-overflow: ellipsis;
+}
+#invFilterSelects { display: contents; }
+#invCount { white-space: nowrap; font-size: 12px; }
 .table-wrap { overflow-x: auto; max-height: 520px; overflow-y: auto; }
 table { border-collapse: collapse; width: 100%; font-family: var(--font-mono); font-size: 12.5px; }
 th {

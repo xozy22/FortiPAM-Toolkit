@@ -105,8 +105,13 @@
         <button data-tab="class_tags">Klassifizierungen</button>
       </div>
       <div class="panel">
-        <div class="form-row" style="justify-content:space-between">
-          <input type="search" id="invSearch" placeholder="Filtern …" class="search" style="margin-bottom:0">
+        <div class="filter-bar">
+          <input type="search" id="invSearch" class="search"
+                 placeholder='Suchen … (z. B. ordner:Linux -test web|ssh "exakter Begriff")'
+                 title="Suchsyntax: mehrere Begriffe = UND · spalte:wert schränkt auf eine Spalte ein · -begriff schließt aus · a|b = ODER · &quot;Phrase mit Leerzeichen&quot;">
+          <span id="invFilterSelects"></span>
+          <span class="mono dim" id="invCount"></span>
+          <button class="btn ghost" id="btnFilterReset" hidden>Filter zurücksetzen</button>
           <button class="btn ghost danger" id="btnDelete" hidden>Auswahl löschen</button>
         </div>
         <div id="invDetail"></div>

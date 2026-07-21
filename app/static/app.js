@@ -208,6 +208,7 @@ async function loadInventory(refresh = false) {
       t._fields = (t.field || []).map((f) => f.name).join(", ");
     }
     renderInvTiles();
+    renderInvFilters();
     renderInvTable();
     $("tplGenSel").innerHTML = inv.templates.map((t) =>
       `<option>${esc(t.name)}</option>`).join("");
@@ -243,14 +244,92 @@ const SELECTABLE = {
   folders: { kind: "folder", mkey: (r) => r.id, label: (r) => r.path || r.name },
 };
 
+/* Spalten, die als kombinierbare Dropdown-Filter angeboten werden */
+const FILTER_COLS = {
+  secrets: ["folder_path", "template", "target"],
+  targets: ["template", "class"],
+  templates: ["server-info"],
+  folders: [],
+  class_tags: [],
+};
+const MAX_FILTER_VALUES = 60;
+
+/* Suchsyntax: Begriffe = UND · spalte:wert · -begriff (nicht) · a|b (oder) · "Phrase" */
+function parseQuery(q) {
+  const tokens = q.match(/"[^"]*"|\S+/g) || [];
+  return tokens.map((tok) => {
+    let neg = false;
+    if (tok.startsWith("-") || tok.startsWith("!")) { neg = true; tok = tok.slice(1); }
+    let col = null;
+    const m = tok.match(/^([\wäöüß.\-()]+):(.+)$/i);
+    if (m) { col = m[1].toLowerCase(); tok = m[2]; }
+    const value = tok.replace(/^"|"$/g, "").toLowerCase();
+    const alts = value.split("|").map((a) => a.trim()).filter(Boolean);
+    return { neg, col, alts };
+  }).filter((t) => t.alts.length);
+}
+
+function tokenColumns(token, cols) {
+  if (!token.col) return cols;
+  const want = token.col;
+  const hit = cols.filter((c) =>
+    c.k.toLowerCase() === want || c.l.toLowerCase() === want ||
+    c.k.toLowerCase().startsWith(want) || c.l.toLowerCase().startsWith(want));
+  return hit.length ? hit : cols;   // unbekannte Spalte -> normale Volltextsuche
+}
+
+function matchToken(row, token, cols) {
+  const hit = tokenColumns(token, cols).some((c) => {
+    const val = String(row[c.k] ?? "").toLowerCase();
+    return token.alts.some((a) => val.includes(a));
+  });
+  return token.neg ? !hit : hit;
+}
+
+function renderInvFilters() {
+  const cols = INV_COLS[S.invTab];
+  const data = S.inventory ? (S.inventory[S.invTab] || []) : [];
+  const box = $("invFilterSelects");
+  box.innerHTML = "";
+  S.invFilters = S.invFilters || {};
+  for (const key of FILTER_COLS[S.invTab] || []) {
+    const col = cols.find((c) => c.k === key);
+    if (!col) continue;
+    const values = [...new Set(data.map((r) => String(r[key] ?? "")).filter(Boolean))]
+      .sort((a, b) => a.localeCompare(b, "de"));
+    if (values.length < 2 || values.length > MAX_FILTER_VALUES) continue;
+    const sel = document.createElement("select");
+    sel.id = "invF_" + key;
+    sel.title = `Nach ${col.l} filtern (kombinierbar)`;
+    sel.innerHTML = `<option value="">— ${esc(col.l)}: alle —</option>` +
+      values.map((v) => `<option${S.invFilters[key] === v ? " selected" : ""}>${esc(v)}</option>`).join("");
+    sel.addEventListener("change", () => {
+      S.invFilters[key] = sel.value;
+      renderInvTable();
+    });
+    box.appendChild(sel);
+  }
+}
+
 function renderInvTable() {
   const cols = INV_COLS[S.invTab];
   const data = S.inventory[S.invTab] || [];
-  const q = $("invSearch").value.trim().toLowerCase();
-  const rows = q
-    ? data.filter((r) => cols.some((c) => String(r[c.k] ?? "").toLowerCase().includes(q)))
-    : data;
+  const q = $("invSearch").value.trim();
+
+  let rows = data;
+  for (const [key, val] of Object.entries(S.invFilters || {})) {
+    if (val) rows = rows.filter((r) => String(r[key] ?? "") === val);
+  }
+  const tokens = parseQuery(q);
+  if (tokens.length) {
+    rows = rows.filter((r) => tokens.every((t) => matchToken(r, t, cols)));
+  }
   S.invRows = rows;
+
+  const filtered = rows.length !== data.length;
+  $("invCount").textContent = filtered ? `${rows.length} / ${data.length}` : `${data.length}`;
+  $("btnFilterReset").hidden = !filtered && !q &&
+    !Object.values(S.invFilters || {}).some(Boolean);
   let note = "";
   const tot = S.inventory.totals || {};
   if ((S.invTab === "secrets" && tot.secrets != null && tot.secrets > S.inventory.secrets.length) ||
@@ -413,9 +492,19 @@ $("invTabs").querySelectorAll("button").forEach((b) =>
     $("invTabs").querySelectorAll("button").forEach((x) => x.classList.remove("active"));
     b.classList.add("active");
     S.invTab = b.dataset.tab;
+    S.invFilters = {};
+    $("invSearch").value = "";
+    $("invDetail").innerHTML = "";
+    renderInvFilters();
     renderInvTable();
   }));
 $("invSearch").addEventListener("input", renderInvTable);
+$("btnFilterReset").addEventListener("click", () => {
+  $("invSearch").value = "";
+  S.invFilters = {};
+  renderInvFilters();
+  renderInvTable();
+});
 $("btnInvRefresh").addEventListener("click", () => loadInventory(true));
 
 /* ==== Excel-Upload =================================================== */

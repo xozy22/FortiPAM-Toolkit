@@ -33,6 +33,10 @@ Live-Gerät).
 ### Inventar
 - Vollständiger Bestand: Targets, Secrets, Ordner (mit Pfaden), Templates,
   Klassifizierungen — seitenweise geladen, auch bei großen Beständen stabil
+- **Kombinierbare Filter**: Spalten-Dropdowns (Ordner, Template, Target, …)
+  plus Suchsyntax — mehrere Begriffe = UND, `spalte:wert`, `-begriff`
+  (ausschließen), `a|b` (oder), `"Phrase mit Leerzeichen"`; Trefferzähler
+  und Ein-Klick-Reset inklusive
 - **„Sichtbar / gesamt"-Anzeige**: deckt auf, wenn dem API-User Berechtigungen
   fehlen (FortiPAM filtert Secrets und Ordner pro Benutzer)
 - **Detailansicht** per Klick auf jede Zeile — sensible Feldwerte (Passwörter,
