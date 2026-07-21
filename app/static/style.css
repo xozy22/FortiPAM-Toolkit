@@ -190,15 +190,52 @@ input[type=checkbox] { accent-color: var(--accent); width: 15px; height: 15px; }
 /* ==== Inventar-Filterleiste ========================================= */
 .filter-bar {
   display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
-  margin-bottom: 14px;
+  margin-bottom: 10px;
 }
-.filter-bar .search { margin-bottom: 0; flex: 1 1 260px; min-width: 220px; }
+.filter-bar .search { margin-bottom: 0; flex: 1 1 240px; min-width: 200px; }
 .filter-bar select {
-  min-width: 130px; max-width: 220px;
+  min-width: 120px; max-width: 210px;
   text-overflow: ellipsis;
 }
 #invFilterSelects { display: contents; }
 #invCount { white-space: nowrap; font-size: 12px; }
+
+.help-btn {
+  width: 30px; height: 34px; flex: none;
+  background: var(--panel-2); border: 1px solid var(--line); color: var(--dim);
+  font-family: var(--font-mono); font-size: 14px; cursor: pointer;
+}
+.help-btn:hover, .help-btn.active { color: var(--accent); border-color: var(--accent); }
+
+.search-help {
+  border: 1px solid var(--line); background: var(--bg-deep);
+  padding: 12px 16px; margin-bottom: 12px;
+  font-size: 13px; line-height: 1.9; color: var(--dim);
+}
+.search-help b { color: var(--txt); }
+.search-help .mono { color: var(--accent); }
+
+/* Aktive Filter als Chips */
+.chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+.chips:empty { display: none; }
+.chip {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 4px 10px; font-family: var(--font-mono); font-size: 12px;
+  background: var(--accent-soft); border: 1px solid var(--accent); color: var(--txt);
+}
+.chip .chip-k { color: var(--accent); }
+.chip .chip-x {
+  cursor: pointer; color: var(--dim); border: none; background: none;
+  font-family: var(--font-mono); font-size: 13px; padding: 0;
+}
+.chip .chip-x:hover { color: var(--err); }
+
+/* Sortierbare Spaltenköpfe + klickbare Zellwerte */
+th.sortable { cursor: pointer; user-select: none; }
+th.sortable:hover { color: var(--txt); }
+th .sort-arrow { color: var(--accent); margin-left: 5px; }
+.cellf { border-bottom: 1px dotted var(--dim); cursor: pointer; }
+.cellf:hover { color: var(--accent); border-bottom-color: var(--accent); }
 .table-wrap { overflow-x: auto; max-height: 520px; overflow-y: auto; }
 table { border-collapse: collapse; width: 100%; font-family: var(--font-mono); font-size: 12.5px; }
 th {

@@ -208,6 +208,7 @@ async function loadInventory(refresh = false) {
       t._fields = (t.field || []).map((f) => f.name).join(", ");
     }
     renderInvTiles();
+    renderChips();
     renderInvFilters();
     renderInvTable();
     $("tplGenSel").innerHTML = inv.templates.map((t) =>
@@ -286,50 +287,108 @@ function matchToken(row, token, cols) {
   return token.neg ? !hit : hit;
 }
 
+/* ---- Filter-Chips: sichtbare, einzeln entfernbare Filter ------------ */
+
+function addChip(chip) {
+  S.invChips = S.invChips || [];
+  const dup = S.invChips.some((c) => c.type === chip.type && c.key === chip.key
+    && c.value === chip.value && c.raw === chip.raw);
+  if (dup) return;
+  S.invChips.push(chip);
+  renderChips();
+  renderInvFilters();
+  renderInvTable();
+}
+
+function removeChip(idx) {
+  (S.invChips || []).splice(idx, 1);
+  renderChips();
+  renderInvFilters();
+  renderInvTable();
+}
+
+function renderChips() {
+  const box = $("invChips");
+  box.innerHTML = (S.invChips || []).map((c, i) => {
+    const label = c.type === "col"
+      ? `<span class="chip-k">${esc(c.label)}:</span> ${esc(c.value)}`
+      : `<span class="chip-k">Suche:</span> ${esc(c.raw)}`;
+    return `<span class="chip">${label}` +
+      `<button class="chip-x" data-idx="${i}" title="Filter entfernen">✕</button></span>`;
+  }).join("");
+  box.querySelectorAll(".chip-x").forEach((b) =>
+    b.addEventListener("click", () => removeChip(+b.dataset.idx)));
+}
+
 function renderInvFilters() {
   const cols = INV_COLS[S.invTab];
   const data = S.inventory ? (S.inventory[S.invTab] || []) : [];
   const box = $("invFilterSelects");
   box.innerHTML = "";
-  S.invFilters = S.invFilters || {};
   for (const key of FILTER_COLS[S.invTab] || []) {
     const col = cols.find((c) => c.k === key);
     if (!col) continue;
-    const values = [...new Set(data.map((r) => String(r[key] ?? "")).filter(Boolean))]
+    const counts = new Map();
+    for (const r of data) {
+      const v = String(r[key] ?? "");
+      if (v) counts.set(v, (counts.get(v) || 0) + 1);
+    }
+    const chosen = new Set((S.invChips || [])
+      .filter((c) => c.type === "col" && c.key === key).map((c) => c.value));
+    const values = [...counts.keys()].filter((v) => !chosen.has(v))
       .sort((a, b) => a.localeCompare(b, "de"));
-    if (values.length < 2 || values.length > MAX_FILTER_VALUES) continue;
+    if (counts.size < 2 || counts.size > MAX_FILTER_VALUES || !values.length) continue;
     const sel = document.createElement("select");
-    sel.id = "invF_" + key;
-    sel.title = `Nach ${col.l} filtern (kombinierbar)`;
-    sel.innerHTML = `<option value="">— ${esc(col.l)}: alle —</option>` +
-      values.map((v) => `<option${S.invFilters[key] === v ? " selected" : ""}>${esc(v)}</option>`).join("");
+    sel.title = `Nach ${col.l} filtern — mehrfach wählbar (ODER-verknüpft)`;
+    sel.innerHTML = `<option value="">+ ${esc(col.l)} …</option>` +
+      values.map((v) => `<option value="${esc(v)}">${esc(v)} (${counts.get(v)})</option>`).join("");
     sel.addEventListener("change", () => {
-      S.invFilters[key] = sel.value;
-      renderInvTable();
+      if (sel.value) addChip({ type: "col", key, label: col.l, value: sel.value });
+      sel.value = "";
     });
     box.appendChild(sel);
   }
 }
 
+/* Chips + Live-Sucheingabe auf die Daten anwenden */
+function applyInvFilters(data, cols) {
+  let rows = data;
+  const groups = {};
+  for (const c of S.invChips || []) {
+    if (c.type === "col") (groups[c.key] = groups[c.key] || []).push(c.value);
+  }
+  for (const [key, vals] of Object.entries(groups)) {
+    rows = rows.filter((r) => vals.includes(String(r[key] ?? "")));
+  }
+  for (const c of S.invChips || []) {
+    if (c.type === "text") {
+      rows = rows.filter((r) => c.tokens.every((t) => matchToken(r, t, cols)));
+    }
+  }
+  const live = parseQuery($("invSearch").value.trim());
+  if (live.length) {
+    rows = rows.filter((r) => live.every((t) => matchToken(r, t, cols)));
+  }
+  return rows;
+}
+
 function renderInvTable() {
   const cols = INV_COLS[S.invTab];
   const data = S.inventory[S.invTab] || [];
-  const q = $("invSearch").value.trim();
+  let rows = applyInvFilters(data, cols);
 
-  let rows = data;
-  for (const [key, val] of Object.entries(S.invFilters || {})) {
-    if (val) rows = rows.filter((r) => String(r[key] ?? "") === val);
-  }
-  const tokens = parseQuery(q);
-  if (tokens.length) {
-    rows = rows.filter((r) => tokens.every((t) => matchToken(r, t, cols)));
+  if (S.invSort) {
+    const { key, dir } = S.invSort;
+    const mul = dir === "asc" ? 1 : -1;
+    rows = [...rows].sort((a, b) => String(a[key] ?? "").localeCompare(
+      String(b[key] ?? ""), "de", { numeric: true, sensitivity: "base" }) * mul);
   }
   S.invRows = rows;
 
-  const filtered = rows.length !== data.length;
-  $("invCount").textContent = filtered ? `${rows.length} / ${data.length}` : `${data.length}`;
-  $("btnFilterReset").hidden = !filtered && !q &&
-    !Object.values(S.invFilters || {}).some(Boolean);
+  const active = (S.invChips || []).length > 0 || $("invSearch").value.trim() !== "";
+  $("invCount").textContent = rows.length !== data.length
+    ? `${rows.length} / ${data.length}` : `${data.length}`;
+  $("btnFilterReset").hidden = !active && !S.invSort;
   let note = "";
   const tot = S.inventory.totals || {};
   if ((S.invTab === "secrets" && tot.secrets != null && tot.secrets > S.inventory.secrets.length) ||
@@ -355,15 +414,28 @@ function renderInvTable() {
   }
 
   const sel = SELECTABLE[S.invTab];
+  const filterKeys = new Set(FILTER_COLS[S.invTab] || []);
   if (!rows.length) {
     $("invTable").innerHTML = note + `<p class="empty-note">Keine Einträge.</p>`;
   } else {
     const head = (sel ? `<th class="sel-col"><input type="checkbox" id="selAll" title="alle (gefilterten) auswählen"></th>` : "") +
-      cols.map((c) => `<th>${esc(c.l)}</th>`).join("");
+      cols.map((c) => {
+        const arrow = S.invSort && S.invSort.key === c.k
+          ? `<span class="sort-arrow">${S.invSort.dir === "asc" ? "▲" : "▼"}</span>` : "";
+        return `<th class="sortable" data-key="${esc(c.k)}" title="Nach ${esc(c.l)} sortieren">${esc(c.l)}${arrow}</th>`;
+      }).join("");
     const body = rows.map((r, i) =>
       `<tr class="clickable" data-idx="${i}">` +
       (sel ? `<td class="sel-col"><input type="checkbox" class="sel-row" data-idx="${i}"></td>` : "") +
-      cols.map((c) => `<td>${c.r ? c.r(r) : esc(r[c.k] ?? "")}</td>`).join("") + "</tr>"
+      cols.map((c) => {
+        if (c.r) return `<td>${c.r(r)}</td>`;
+        const val = String(r[c.k] ?? "");
+        if (val && filterKeys.has(c.k)) {
+          return `<td><span class="cellf" data-key="${esc(c.k)}" data-val="${esc(val)}"` +
+                 ` title="Nach '${esc(val)}' filtern">${esc(val)}</span></td>`;
+        }
+        return `<td>${esc(val)}</td>`;
+      }).join("") + "</tr>"
     ).join("");
     $("invTable").innerHTML = note +
       `<table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
@@ -378,8 +450,25 @@ function renderInvTable() {
     cb.addEventListener("change", updateDeleteBtn));
   $("invTable").querySelectorAll("tr.clickable").forEach((tr) =>
     tr.addEventListener("click", (e) => {
-      if (e.target.closest(".sel-col")) return;
+      if (e.target.closest(".sel-col") || e.target.closest(".cellf")) return;
       openDetail(+tr.dataset.idx);
+    }));
+  $("invTable").querySelectorAll("th.sortable").forEach((th) =>
+    th.addEventListener("click", () => {
+      const key = th.dataset.key;
+      if (S.invSort && S.invSort.key === key) {
+        S.invSort = S.invSort.dir === "asc" ? { key, dir: "desc" } : null;
+      } else {
+        S.invSort = { key, dir: "asc" };
+      }
+      renderInvTable();
+    }));
+  $("invTable").querySelectorAll(".cellf").forEach((sp) =>
+    sp.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const col = cols.find((c) => c.k === sp.dataset.key);
+      addChip({ type: "col", key: sp.dataset.key,
+                label: col ? col.l : sp.dataset.key, value: sp.dataset.val });
     }));
   updateDeleteBtn();
 }
@@ -492,16 +581,33 @@ $("invTabs").querySelectorAll("button").forEach((b) =>
     $("invTabs").querySelectorAll("button").forEach((x) => x.classList.remove("active"));
     b.classList.add("active");
     S.invTab = b.dataset.tab;
-    S.invFilters = {};
+    S.invChips = [];
+    S.invSort = null;
     $("invSearch").value = "";
     $("invDetail").innerHTML = "";
+    renderChips();
     renderInvFilters();
     renderInvTable();
   }));
 $("invSearch").addEventListener("input", renderInvTable);
+$("invSearch").addEventListener("keydown", (e) => {
+  if (e.key !== "Enter") return;
+  const raw = $("invSearch").value.trim();
+  const tokens = parseQuery(raw);
+  if (!tokens.length) return;
+  $("invSearch").value = "";
+  addChip({ type: "text", raw, tokens });
+});
+$("btnSearchHelp").addEventListener("click", () => {
+  const box = $("searchHelp");
+  box.hidden = !box.hidden;
+  $("btnSearchHelp").classList.toggle("active", !box.hidden);
+});
 $("btnFilterReset").addEventListener("click", () => {
   $("invSearch").value = "";
-  S.invFilters = {};
+  S.invChips = [];
+  S.invSort = null;
+  renderChips();
   renderInvFilters();
   renderInvTable();
 });

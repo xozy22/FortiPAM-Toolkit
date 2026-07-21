@@ -107,13 +107,26 @@
       <div class="panel">
         <div class="filter-bar">
           <input type="search" id="invSearch" class="search"
-                 placeholder='Suchen … (z. B. ordner:Linux -test web|ssh "exakter Begriff")'
-                 title="Suchsyntax: mehrere Begriffe = UND · spalte:wert schränkt auf eine Spalte ein · -begriff schließt aus · a|b = ODER · &quot;Phrase mit Leerzeichen&quot;">
+                 placeholder="Suchen … (Enter hält den Filter fest)">
+          <button class="help-btn" id="btnSearchHelp" title="Suchsyntax anzeigen">?</button>
           <span id="invFilterSelects"></span>
           <span class="mono dim" id="invCount"></span>
-          <button class="btn ghost" id="btnFilterReset" hidden>Filter zurücksetzen</button>
+          <button class="btn ghost" id="btnFilterReset" hidden>Zurücksetzen</button>
           <button class="btn ghost danger" id="btnDelete" hidden>Auswahl löschen</button>
         </div>
+        <div class="search-help" id="searchHelp" hidden>
+          <b>Filtern ohne Tippen:</b> Werte in der Tabelle anklicken (unterstrichelt) oder
+          Dropdowns nutzen — jeder Filter erscheint als Chip und lässt sich einzeln entfernen.
+          Mehrere Chips derselben Spalte = ODER, verschiedene Spalten = UND.<br>
+          <b>Suchfeld:</b> mehrere Begriffe = UND ·
+          <span class="mono">spalte:wert</span> nur in einer Spalte ·
+          <span class="mono">-begriff</span> ausschließen ·
+          <span class="mono">a|b</span> oder ·
+          <span class="mono">"Phrase mit Leerzeichen"</span> ·
+          <b>Enter</b> hält die Eingabe als Chip fest.<br>
+          <b>Sortieren:</b> Spaltenkopf anklicken (auf/ab).
+        </div>
+        <div class="chips" id="invChips"></div>
         <div id="invDetail"></div>
         <div class="table-wrap" id="invTable"></div>
         <div class="console" id="invConsole" hidden></div>
