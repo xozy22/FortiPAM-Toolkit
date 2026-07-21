@@ -52,15 +52,15 @@ r = c.post(f"{APP}/api/connect", json={
     "use_saved_token": True})
 check("reconnect mit gespeichertem token", r.status_code == 200, r.text[:150])
 
-# 2) Inventar (mit Fallback-Ermittlung)
+# 2) Inventar (Listing via X-HTTP-Method-Override-Fallback)
 r = c.get(f"{APP}/api/inventory")
 inv = r.json()
 check("inventory", r.status_code == 200)
-check("inventory target_listing false", inv["target_listing"] is False)
-check("inventory template_listing false", inv["template_listing"] is False)
-check("inventory targets via secrets", len(inv["targets"]) == 1,
+check("inventory target_listing via override", inv["target_listing"] is True)
+check("inventory template_listing via override", inv["template_listing"] is True)
+check("inventory targets gelistet", len(inv["targets"]) == 1,
       str([t.get("name") for t in inv["targets"]]))
-check("inventory templates via kandidaten", len(inv["templates"]) == 3,
+check("inventory templates gelistet", len(inv["templates"]) == 3,
       str([t.get("name") for t in inv["templates"]]))
 check("inventory owners", "api" in inv["owners"], str(inv["owners"]))
 check("inventory folder path", any(f["path"] == "Linux/Produktion" for f in inv["folders"]))

@@ -390,9 +390,12 @@ def make_plan(mapping: dict = Body(...)):
         except FortiPAMError:
             return None
 
-    checker = None if inv.get("target_listing", True) else target_checker
+    # target_checker immer mitgeben: Das Geräte-Listing hinkt nach Bulk-Läufen
+    # einige Sekunden nach (eventual consistency) — die Einzelabfrage per Name
+    # ist sofort konsistent und fängt das ab.
     plan, public = planner.build_plan(mapping, excel["rows"], inv,
-                                      target_checker=checker, dup_checker=dup_checker)
+                                      target_checker=target_checker,
+                                      dup_checker=dup_checker)
     STATE["plan"] = plan
     return public
 

@@ -43,19 +43,22 @@ class FortiPAMClient:
 
     # ------------------------------------------------------------------
     def request(self, method: str, path: str, params: dict | None = None,
-                body: dict | None = None) -> dict:
+                body: dict | None = None, override: str | None = None) -> dict:
         params = dict(params or {})
         if self.vdom:
             params["vdom"] = self.vdom
         url = f"{self.base_url}/api/v2/{path.lstrip('/')}"
+        headers = {"X-HTTP-Method-Override": override} if override else None
         try:
-            resp = self._client.request(method, url, params=params, json=body)
+            resp = self._client.request(method, url, params=params, json=body,
+                                        headers=headers)
             # Rate-Limit: mit Backoff erneut versuchen
             for delay in _RETRY_DELAYS:
                 if resp.status_code not in _RETRY_STATUS:
                     break
                 time.sleep(delay)
-                resp = self._client.request(method, url, params=params, json=body)
+                resp = self._client.request(method, url, params=params, json=body,
+                                            headers=headers)
         except httpx.ConnectError as exc:
             raise FortiPAMError(f"Verbindung fehlgeschlagen: {exc}") from exc
         except httpx.TimeoutException as exc:
@@ -95,9 +98,24 @@ class FortiPAMClient:
 
     # ------------------------------------------------------------------
     def list_table(self, path: str, fmt: str | None = None) -> tuple[list, dict]:
-        """Liest eine CMDB-Tabelle; gibt (results, envelope) zurück."""
+        """Liest eine CMDB-Tabelle; gibt (results, envelope) zurück.
+
+        FortiPAM verweigert bei secret/target und secret/template das normale
+        Collection-GET ("Unable to get mkey from uri"). Die GUI listet diese
+        Tabellen per POST mit X-HTTP-Method-Override: GET und dem Body
+        {"json_filter": []} — das nutzen wir hier als Fallback.
+        """
         params = {"format": fmt} if fmt else None
-        data = self.request("GET", f"cmdb/{path}", params=params)
+        try:
+            data = self.request("GET", f"cmdb/{path}", params=params)
+        except FortiPAMError as first_exc:
+            if "Unable to get mkey" not in str(first_exc):
+                raise
+            try:
+                data = self.request("POST", f"cmdb/{path}", params=params,
+                                    body={"json_filter": []}, override="GET")
+            except FortiPAMError:
+                raise first_exc from None
         results = data.get("results", [])
         if not isinstance(results, list):
             results = [results]

@@ -143,6 +143,18 @@ async def post_table(p1: str, p2: str, request: Request):
         return err(404, "path not found")
     body = await request.json()
 
+    # GUI-Trick (am echten Geraet beobachtet): POST mit X-HTTP-Method-Override:
+    # GET + {"json_filter": []} listet auch die sonst gesperrten Tabellen.
+    if request.headers.get("x-http-method-override", "").upper() == "GET":
+        if not isinstance(body, dict) or "json_filter" not in body:
+            return err(400, "Unexpected Filter Structure")
+        rows = DB[key]
+        fmt = request.query_params.get("format")
+        if fmt:
+            keep = fmt.split("|")
+            rows = [{k: v for k, v in r.items() if k in keep} for r in rows]
+        return envelope(key, rows)
+
     # --- am echten Gerät beobachtete Validierung ----------------------
     if key in ("secret/folder", "secret/database") and "inherit-permission" not in body:
         return JSONResponse({"status": "error", "http_status": 400,

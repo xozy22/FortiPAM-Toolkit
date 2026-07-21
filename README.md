@@ -110,10 +110,20 @@ erzeugt mit PyInstaller eine portable `dist\FortiPAM-Toolkit.exe`
 
 Diese Punkte weichen vom CMDB-Schema ab und sind im Toolkit berücksichtigt:
 
-- **Kein Collection-GET** auf `secret/target` und `secret/template`
-  („Unable to get mkey from uri"). Das Toolkit weicht auf Einzelabfragen aus:
-  Templates werden über eine Kandidatenliste + Referenzen aus Secrets ermittelt
-  (weitere per Namen nachladbar), Target-Duplikate werden pro Name live geprüft.
+- **Kein normales Collection-GET** auf `secret/target` und `secret/template`
+  („Unable to get mkey from uri") — für keinen Auth-Weg, auch nicht mit
+  GUI-Session. Die GUI (und dieses Toolkit) listet stattdessen per
+  **`POST` mit Header `X-HTTP-Method-Override: GET`** und Body
+  `{"json_filter": []}` — damit liefert dieselbe Route die vollständige Liste
+  (Templates sogar inklusive solcher ohne „create secret"-Berechtigung).
+  Das Toolkit nutzt das automatisch als Fallback; falls auch das gesperrt ist,
+  greifen Einzelabfragen über Kandidatenlisten.
+- **Konsistenzfenster nach Bulk-Erstellung**: Das Target-Listing hinkt nach
+  Schreib-Läufen einige Sekunden hinterher (neu angelegte Targets fehlen kurz
+  in der Liste). Die Duplikat-Prüfung des Toolkits verlässt sich deshalb nie
+  allein aufs Listing, sondern prüft unbekannte Namen zusätzlich einzeln live
+  (Einzelabfragen sind sofort konsistent). In der Inventar-Ansicht kann direkt
+  nach einem Import kurz ein „Neu laden" nötig sein.
 - **POST wendet keine Defaults an**: `secret/folder` und `secret/database`
   verlangen u. a. `inherit-permission` explizit im Payload.
 - **Ordner direkt unter Root**: `inherit-permission` muss `disable` sein und
@@ -124,11 +134,12 @@ Diese Punkte weichen vom CMDB-Schema ab und sind im Toolkit berücksichtigt:
 - Template-Einzelabfragen liefern **403 auch für nicht existierende Namen**,
   wenn der API-User keine „create secret"-Berechtigung für das Template hat —
   nur 200-Antworten sind verlässlich nutzbar.
-- Das Listing-Verbot gilt für **alle Auth-Wege** (auch eingeloggte GUI-Session)
-  und ist mit dem offiziellen FPAM-API-SDK konsistent: Keine der vier
-  API-Spezifikationen (cmdb/monitor/internal/utility) enthält eine
-  Listing-Route für Targets oder Templates — Fortinets eigenes Tooling
-  arbeitet ebenfalls mit Einzelabfragen per ID/Name.
+- Das offizielle FPAM-API-SDK kennt die Override-Listing-Variante übrigens
+  nicht: Keine der vier API-Spezifikationen (cmdb/monitor/internal/utility)
+  dokumentiert sie — Fortinets eigenes Tooling arbeitet mit Einzelabfragen
+  per ID/Name. Der Override-Mechanismus wurde durch Mitschneiden der
+  GUI-Requests ermittelt (undokumentiert, kann sich mit Firmware-Updates
+  ändern — daher die Fallback-Kette im Toolkit).
 - Nützliche Zusatz-APIs (gleiche Bearer-Auth): `POST /api/v2/internal/secret-dup-check`
   (Duplikat-Prüfung per Benutzername + Zieladresse; 409 = Duplikat) — vom
   Toolkit für die Plan-Warnungen genutzt. Außerdem vorhanden:
