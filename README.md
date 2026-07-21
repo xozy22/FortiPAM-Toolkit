@@ -34,10 +34,11 @@ Live-Gerät).
 - Vollständiger Bestand: Targets, Secrets, Ordner (mit Pfaden), Templates,
   Klassifizierungen — seitenweise geladen, auch bei großen Beständen stabil
 - **Filtern per Klick**: Werte in der Tabelle (Ordner, Template, Target, …)
-  anklicken oder über Dropdowns mit Trefferzahlen wählen — jeder Filter wird
-  als **Chip** angezeigt und einzeln entfernbar. Mehrere Chips derselben
-  Spalte = ODER, verschiedene Spalten = UND, frei mit der Textsuche
-  kombinierbar (Enter hält die Eingabe als Chip fest)
+  anklicken oder im **„+ Filter"-Menü** wählen (alle Werte mit Trefferzahlen,
+  Mehrfachauswahl per Haken) — jeder Filter wird als **Chip** angezeigt und
+  einzeln entfernbar. Mehrere Chips derselben Spalte = ODER, verschiedene
+  Spalten = UND, frei mit der Textsuche kombinierbar (Enter hält die
+  Eingabe als Chip fest)
 - **Suchsyntax** für Power-User (eingebaute Hilfe per „?"): `spalte:wert`,
   `-begriff` (ausschließen), `a|b` (oder), `"Phrase mit Leerzeichen"`
 - **Sortierbare Spalten** (Klick auf den Spaltenkopf), Trefferzähler und

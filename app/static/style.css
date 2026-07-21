@@ -193,12 +193,32 @@ input[type=checkbox] { accent-color: var(--accent); width: 15px; height: 15px; }
   margin-bottom: 10px;
 }
 .filter-bar .search { margin-bottom: 0; flex: 1 1 240px; min-width: 200px; }
-.filter-bar select {
-  min-width: 120px; max-width: 210px;
-  text-overflow: ellipsis;
-}
-#invFilterSelects { display: contents; }
 #invCount { white-space: nowrap; font-size: 12px; }
+
+/* "+ Filter"-Menü */
+.fmenu-wrap { position: relative; display: inline-block; }
+.fmenu {
+  position: absolute; top: calc(100% + 6px); left: 0; z-index: 40;
+  min-width: 300px; max-width: 400px; max-height: 360px; overflow-y: auto;
+  background: var(--panel-2); border: 1px solid var(--line);
+  box-shadow: 0 12px 34px rgba(0,0,0,.55); padding: 4px 0 8px;
+}
+.fmenu-head {
+  padding: 10px 14px 4px; font-size: 10.5px; letter-spacing: .13em;
+  text-transform: uppercase; color: var(--accent);
+}
+.fmenu-group + .fmenu-group { border-top: 1px solid var(--line-soft); margin-top: 6px; }
+.fmenu-item {
+  display: flex; align-items: center; gap: 9px; width: 100%;
+  background: none; border: none; text-align: left; cursor: pointer;
+  padding: 6px 14px; color: var(--txt);
+  font-family: var(--font-mono); font-size: 12.5px;
+}
+.fmenu-item:hover { background: var(--accent-soft); }
+.fmenu-item.active { color: var(--accent); }
+.fmenu-check { width: 13px; flex: none; color: var(--ok); }
+.fmenu-count { margin-left: auto; color: var(--dim); font-size: 11px; padding-left: 12px; }
+#btnAddFilter.active { border-color: var(--accent); color: var(--accent); }
 
 .help-btn {
   width: 30px; height: 34px; flex: none;

@@ -109,15 +109,18 @@
           <input type="search" id="invSearch" class="search"
                  placeholder="Suchen … (Enter hält den Filter fest)">
           <button class="help-btn" id="btnSearchHelp" title="Suchsyntax anzeigen">?</button>
-          <span id="invFilterSelects"></span>
+          <span class="fmenu-wrap">
+            <button class="btn ghost" id="btnAddFilter" hidden>+ Filter</button>
+            <div class="fmenu" id="filterMenu" hidden></div>
+          </span>
           <span class="mono dim" id="invCount"></span>
           <button class="btn ghost" id="btnFilterReset" hidden>Zurücksetzen</button>
           <button class="btn ghost danger" id="btnDelete" hidden>Auswahl löschen</button>
         </div>
         <div class="search-help" id="searchHelp" hidden>
-          <b>Filtern ohne Tippen:</b> Werte in der Tabelle anklicken (unterstrichelt) oder
-          Dropdowns nutzen — jeder Filter erscheint als Chip und lässt sich einzeln entfernen.
-          Mehrere Chips derselben Spalte = ODER, verschiedene Spalten = UND.<br>
+          <b>Filtern ohne Tippen:</b> Werte in der Tabelle anklicken (unterstrichelt) oder das
+          „+ Filter"-Menü nutzen — jeder Filter erscheint als Chip und lässt sich einzeln
+          entfernen. Mehrere Chips derselben Spalte = ODER, verschiedene Spalten = UND.<br>
           <b>Suchfeld:</b> mehrere Begriffe = UND ·
           <span class="mono">spalte:wert</span> nur in einer Spalte ·
           <span class="mono">-begriff</span> ausschließen ·

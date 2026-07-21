@@ -320,11 +320,17 @@ function renderChips() {
     b.addEventListener("click", () => removeChip(+b.dataset.idx)));
 }
 
+function closeFilterMenu() {
+  $("filterMenu").hidden = true;
+  $("btnAddFilter").classList.remove("active");
+}
+
 function renderInvFilters() {
   const cols = INV_COLS[S.invTab];
   const data = S.inventory ? (S.inventory[S.invTab] || []) : [];
-  const box = $("invFilterSelects");
-  box.innerHTML = "";
+  const menu = $("filterMenu");
+  const btn = $("btnAddFilter");
+  let html = "";
   for (const key of FILTER_COLS[S.invTab] || []) {
     const col = cols.find((c) => c.k === key);
     if (!col) continue;
@@ -333,21 +339,39 @@ function renderInvFilters() {
       const v = String(r[key] ?? "");
       if (v) counts.set(v, (counts.get(v) || 0) + 1);
     }
+    if (counts.size < 2 || counts.size > MAX_FILTER_VALUES) continue;
     const chosen = new Set((S.invChips || [])
       .filter((c) => c.type === "col" && c.key === key).map((c) => c.value));
-    const values = [...counts.keys()].filter((v) => !chosen.has(v))
-      .sort((a, b) => a.localeCompare(b, "de"));
-    if (counts.size < 2 || counts.size > MAX_FILTER_VALUES || !values.length) continue;
-    const sel = document.createElement("select");
-    sel.title = `Nach ${col.l} filtern — mehrfach wählbar (ODER-verknüpft)`;
-    sel.innerHTML = `<option value="">+ ${esc(col.l)} …</option>` +
-      values.map((v) => `<option value="${esc(v)}">${esc(v)} (${counts.get(v)})</option>`).join("");
-    sel.addEventListener("change", () => {
-      if (sel.value) addChip({ type: "col", key, label: col.l, value: sel.value });
-      sel.value = "";
-    });
-    box.appendChild(sel);
+    const values = [...counts.keys()].sort((a, b) => a.localeCompare(b, "de"));
+    html += `<div class="fmenu-group"><div class="fmenu-head">${esc(col.l)}</div>` +
+      values.map((v) => {
+        const on = chosen.has(v);
+        return `<button class="fmenu-item${on ? " active" : ""}" data-key="${esc(key)}"` +
+          ` data-val="${esc(v)}" title="${on ? "Filter entfernen" : "Filter hinzufügen"}">` +
+          `<span class="fmenu-check">${on ? "✓" : ""}</span>${esc(v)}` +
+          `<span class="fmenu-count">${counts.get(v)}</span></button>`;
+      }).join("") + `</div>`;
   }
+  btn.hidden = !html;
+  menu.innerHTML = html;
+  if (!html) closeFilterMenu();
+  menu.querySelectorAll(".fmenu-item").forEach((b) =>
+    b.addEventListener("click", (e) => {
+      // Menü bleibt für Mehrfachauswahl offen; ohne stopPropagation würde der
+      // document-Listener das (durch das Re-Rendering gelöste) Ziel nicht mehr
+      // dem Menü zuordnen und es schließen
+      e.stopPropagation();
+      const key = b.dataset.key;
+      const val = b.dataset.val;
+      const idx = (S.invChips || []).findIndex((c) =>
+        c.type === "col" && c.key === key && c.value === val);
+      if (idx >= 0) {
+        removeChip(idx);            // abwählen = Chip entfernen
+      } else {
+        const col = cols.find((c) => c.k === key);
+        addChip({ type: "col", key, label: col ? col.l : key, value: val });
+      }
+    }));
 }
 
 /* Chips + Live-Sucheingabe auf die Daten anwenden */
@@ -585,6 +609,7 @@ $("invTabs").querySelectorAll("button").forEach((b) =>
     S.invSort = null;
     $("invSearch").value = "";
     $("invDetail").innerHTML = "";
+    closeFilterMenu();
     renderChips();
     renderInvFilters();
     renderInvTable();
@@ -602,6 +627,17 @@ $("btnSearchHelp").addEventListener("click", () => {
   const box = $("searchHelp");
   box.hidden = !box.hidden;
   $("btnSearchHelp").classList.toggle("active", !box.hidden);
+});
+$("btnAddFilter").addEventListener("click", () => {
+  const menu = $("filterMenu");
+  menu.hidden = !menu.hidden;
+  $("btnAddFilter").classList.toggle("active", !menu.hidden);
+});
+document.addEventListener("click", (e) => {
+  if (!e.target.closest(".fmenu-wrap")) closeFilterMenu();
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") closeFilterMenu();
 });
 $("btnFilterReset").addEventListener("click", () => {
   $("invSearch").value = "";
