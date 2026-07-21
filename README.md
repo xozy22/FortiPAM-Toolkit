@@ -99,7 +99,9 @@ build_exe.bat
 ```
 
 erzeugt mit PyInstaller eine portable `dist\FortiPAM-Toolkit.exe`
-(kein installiertes Python auf dem Zielrechner nötig).
+(ca. 15 MB, kein installiertes Python auf dem Zielrechner nötig).
+Die EXE ist gegen Mock (komplette E2E-Suite) und Live-Gerät (TLS)
+verifiziert; beim Start öffnet sie automatisch den Browser.
 
 ## Technische Hinweise
 
