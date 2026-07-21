@@ -202,4 +202,13 @@ sec = r.json()["secrets"][0]
 check("dup-warnung im plan", any("bestehendes Secret" in w for w in sec.get("warnings", [])),
       str(sec.get("warnings")))
 
+# 10) Ohne Target-Referenz: Warnung bei Pflichtfeld vom Typ target-address
+import copy
+m2 = copy.deepcopy(mapping)
+m2["options"]["create_targets"] = False
+r = c.post(f"{APP}/api/plan", json=m2)
+sec = r.json()["secrets"][0]
+check("target-address-warnung", any("Ziel-Adresse" in w for w in sec.get("warnings", [])),
+      str(sec.get("warnings")))
+
 print("\nAlle Tests bestanden.")

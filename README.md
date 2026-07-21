@@ -117,7 +117,12 @@ Diese Punkte weichen vom CMDB-Schema ab und sind im Toolkit berücksichtigt:
   `{"json_filter": []}` — damit liefert dieselbe Route die vollständige Liste
   (Templates sogar inklusive solcher ohne „create secret"-Berechtigung).
   Das Toolkit nutzt das automatisch als Fallback; falls auch das gesperrt ist,
-  greifen Einzelabfragen über Kandidatenlisten.
+  greifen Einzelabfragen über Kandidatenlisten. `secret/database` (die Secrets
+  selbst) sowie `secret/folder` und `secret/classification-tag` erlauben das
+  normale Collection-GET — Ergebnis mit der Override-Variante verifiziert
+  identisch. Der Override-Body unterstützt auch serverseitige Filter, z. B.
+  `{"json_filter": [{"logic": "and", "filters": [{"key": "…", "type": "string",
+  "operator": "exact", "pattern": "…"}]}]}`.
 - **Konsistenzfenster nach Bulk-Erstellung**: Das Target-Listing hinkt nach
   Schreib-Läufen einige Sekunden hinterher (neu angelegte Targets fehlen kurz
   in der Liste). Die Duplikat-Prüfung des Toolkits verlässt sich deshalb nie

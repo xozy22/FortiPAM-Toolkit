@@ -315,6 +315,22 @@ def build_plan(mapping: dict, rows: list[dict], inventory: dict,
                     action = "duplicate"
                     warnings.append(f"Doppelt in Datei (zuerst Zeile {dup['row']})")
 
+                # Templates mit Pflichtfeld vom Typ target-address brauchen
+                # eine Target-Referenz (oder einen gemappten Feldwert), sonst
+                # lehnt das Gerät ab ("Mandatory field missing")
+                if not target_ref:
+                    tpl_obj = templates.get(secret_tpl) or {}
+                    missing_addr = next(
+                        (f.get("name") for f in (tpl_obj.get("field") or [])
+                         if f.get("type") == "target-address"
+                         and f.get("mandatory") == "enable"
+                         and not any(x.get("name") == f.get("name")
+                                     for x in body["field"])), None)
+                    if missing_addr:
+                        warnings.append(
+                            f"Template erwartet eine Ziel-Adresse (Feld '{missing_addr}') – "
+                            f"ohne Target-Referenz lehnt das Gerät die Erstellung ab")
+
                 # geräteseitige Duplikat-Prüfung (Benutzername + Ziel-Adresse)
                 if action == "create" and dup_enabled and username_val:
                     tkey = _norm(target_ref)
