@@ -42,32 +42,22 @@ def _require(key: str, message: str):
 
 
 # ======================================================================
-# Gespeichertes Verbindungsprofil (Token DPAPI-verschlüsselt)
+# Verbindungsmanager: mehrere benannte Profile, Token DPAPI-verschlüsselt
 # ======================================================================
 
-def _profile_path() -> Path:
+def _store_dir() -> Path:
     base = Path(os.environ.get("APPDATA") or Path.home()) / "FortiPAM-Toolkit"
     base.mkdir(parents=True, exist_ok=True)
-    return base / "connection.json"
+    return base
 
 
-def _load_profile() -> dict:
-    try:
-        return json.loads(_profile_path().read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return {}
+def _encrypt_token(token: str) -> str | None:
+    if not token or not winsec.available():
+        return None
+    return base64.b64encode(winsec.protect(token.encode("utf-8"))).decode("ascii")
 
 
-def _save_profile(base_url: str, vdom: str, verify_ssl: bool, token: str | None) -> None:
-    profile = {"base_url": base_url, "vdom": vdom, "verify_ssl": verify_ssl}
-    if token and winsec.available():
-        profile["token_enc"] = base64.b64encode(
-            winsec.protect(token.encode("utf-8"))).decode("ascii")
-    _profile_path().write_text(json.dumps(profile, indent=1), encoding="utf-8")
-
-
-def _profile_token(profile: dict) -> str:
-    enc = profile.get("token_enc")
+def _decrypt_token(enc: str | None) -> str:
     if not enc:
         return ""
     try:
@@ -76,24 +66,72 @@ def _profile_token(profile: dict) -> str:
         return ""
 
 
-@app.get("/api/connection/saved")
-def connection_saved():
-    profile = _load_profile()
-    if not profile:
-        return {}
-    return {"base_url": profile.get("base_url", ""),
-            "vdom": profile.get("vdom", ""),
-            "verify_ssl": bool(profile.get("verify_ssl")),
-            "has_token": bool(profile.get("token_enc")),
-            "dpapi": winsec.available()}
-
-
-@app.post("/api/connection/forget")
-def connection_forget():
+def _load_store() -> dict:
+    path = _store_dir() / "connections.json"
     try:
-        _profile_path().unlink(missing_ok=True)
-    except OSError:
+        # utf-8-sig: toleriert ein evtl. vorhandenes BOM
+        store = json.loads(path.read_text(encoding="utf-8-sig"))
+        if isinstance(store.get("profiles"), list):
+            return store
+    except (OSError, ValueError):
         pass
+    store = {"profiles": [], "last_used": ""}
+    # Migration der alten Einzel-Ablage (connection.json)
+    old = _store_dir() / "connection.json"
+    try:
+        prof = json.loads(old.read_text(encoding="utf-8-sig"))
+        if prof.get("base_url"):
+            store["profiles"].append({
+                "name": "Standard", "base_url": prof.get("base_url", ""),
+                "vdom": prof.get("vdom", ""),
+                "verify_ssl": bool(prof.get("verify_ssl")),
+                "token_enc": prof.get("token_enc")})
+            store["last_used"] = "Standard"
+            _save_store(store)
+        old.unlink(missing_ok=True)
+    except (OSError, ValueError):
+        pass
+    return store
+
+
+def _save_store(store: dict) -> None:
+    path = _store_dir() / "connections.json"
+    path.write_text(json.dumps(store, indent=1, ensure_ascii=False), encoding="utf-8")
+
+
+def _find_profile(store: dict, name: str) -> dict | None:
+    want = str(name or "").strip().lower()
+    for p in store.get("profiles", []):
+        if str(p.get("name", "")).strip().lower() == want:
+            return p
+    return None
+
+
+@app.get("/api/connections")
+def connections_list():
+    store = _load_store()
+    return {
+        "profiles": [{"name": p.get("name", ""),
+                      "base_url": p.get("base_url", ""),
+                      "vdom": p.get("vdom", ""),
+                      "verify_ssl": bool(p.get("verify_ssl")),
+                      "has_token": bool(p.get("token_enc"))}
+                     for p in store.get("profiles", [])],
+        "last_used": store.get("last_used", ""),
+        "dpapi": winsec.available(),
+    }
+
+
+@app.delete("/api/connections/{name}")
+def connections_delete(name: str):
+    store = _load_store()
+    prof = _find_profile(store, name)
+    if prof is None:
+        raise HTTPException(status_code=404, detail=f"Verbindung '{name}' nicht gefunden.")
+    store["profiles"].remove(prof)
+    if store.get("last_used", "").strip().lower() == str(name).strip().lower():
+        store["last_used"] = ""
+    _save_store(store)
     return {"ok": True}
 
 
@@ -105,13 +143,16 @@ def connection_forget():
 def connect(payload: dict = Body(...)):
     base_url = str(payload.get("base_url") or "").strip()
     token = str(payload.get("token") or "").strip()
+    profile_name = str(payload.get("profile_name") or "").strip()
     remember = bool(payload.get("remember"))
-    if not token and payload.get("use_saved_token"):
-        token = _profile_token(_load_profile())
+    if not token and profile_name:
+        # gespeicherten Token des Profils verwenden
+        prof = _find_profile(_load_store(), profile_name)
+        token = _decrypt_token((prof or {}).get("token_enc"))
         if not token:
-            raise HTTPException(status_code=400,
-                                detail="Kein gespeicherter Token vorhanden oder Entschlüsselung fehlgeschlagen.")
-        remember = True   # gespeicherten Token nicht durch die Anmeldung verlieren
+            raise HTTPException(status_code=400, detail=(
+                f"Für '{profile_name}' ist kein Token gespeichert oder die "
+                f"Entschlüsselung schlug fehl — bitte Token eingeben."))
     if not base_url or not token:
         raise HTTPException(status_code=400, detail="Basis-URL und API-Token sind erforderlich.")
     if not base_url.lower().startswith(("http://", "https://")):
@@ -139,13 +180,27 @@ def connect(payload: dict = Body(...)):
         "build": envelope.get("build", ""),
         "serial": envelope.get("serial", ""),
     }
+    info["profile"] = profile_name
     STATE.update({"client": client, "conn_info": info, "inventory": None,
                   "plan": None, "extra_templates": set(),
                   "extra_target_names": set()})
-    # Verbindungsdaten sichern; Token nur bei "remember" (DPAPI-verschlüsselt)
+    # Profil speichern/aktualisieren (Token DPAPI-verschlüsselt) + last_used
     try:
-        _save_profile(base_url, client.vdom, bool(payload.get("verify_ssl")),
-                      token if remember else None)
+        store = _load_store()
+        if remember and profile_name:
+            prof = _find_profile(store, profile_name)
+            if prof is None:
+                prof = {"name": profile_name}
+                store["profiles"].append(prof)
+            prof.update({"base_url": base_url, "vdom": client.vdom,
+                         "verify_ssl": bool(payload.get("verify_ssl"))})
+            enc = _encrypt_token(token)
+            if enc:
+                prof["token_enc"] = enc
+        existing = _find_profile(store, profile_name) if profile_name else None
+        if existing:
+            store["last_used"] = existing["name"]
+        _save_store(store)
     except OSError:
         pass
     return info

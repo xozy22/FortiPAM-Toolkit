@@ -35,22 +35,38 @@ is_dup, msg = cl.dup_check("niemand", "10.0.0.5")
 check("dup-check negativ", not is_dup, f"{is_dup} {msg[:60]}")
 cl.close()
 
-# 1) Verbinden (mit DPAPI-Speicherung)
+# 1) Verbinden (Profil "Mock-E2E" wird gespeichert, Token DPAPI-verschlüsselt)
 r = c.post(f"{APP}/api/connect", json={
     "base_url": "http://127.0.0.1:9443", "token": "mocktoken", "verify_ssl": False,
-    "remember": True})
+    "remember": True, "profile_name": "Mock-E2E"})
 check("connect", r.status_code == 200, r.text[:200])
 check("connect version", r.json()["version"] == "v1.9.0")
 
-# 1b) Gespeichertes Profil + Wiederverbinden mit gespeichertem Token
-r = c.get(f"{APP}/api/connection/saved")
-saved = r.json()
-check("profil gespeichert", saved.get("has_token") is True
-      and saved.get("base_url") == "http://127.0.0.1:9443", str(saved))
+# 1b) Verbindungsmanager: Profil vorhanden, Wiederverbinden mit gespeichertem Token
+r = c.get(f"{APP}/api/connections")
+conns = r.json()
+prof = next((p for p in conns.get("profiles", []) if p["name"] == "Mock-E2E"), None)
+check("profil gespeichert", prof is not None and prof.get("has_token") is True
+      and prof.get("base_url") == "http://127.0.0.1:9443", str(prof))
+check("last_used gesetzt", conns.get("last_used") == "Mock-E2E", str(conns.get("last_used")))
 r = c.post(f"{APP}/api/connect", json={
     "base_url": "http://127.0.0.1:9443", "token": "", "verify_ssl": False,
-    "use_saved_token": True})
-check("reconnect mit gespeichertem token", r.status_code == 200, r.text[:150])
+    "profile_name": "Mock-E2E"})
+check("reconnect mit profil-token", r.status_code == 200, r.text[:150])
+
+# 1c) Zweites Profil anlegen + löschen
+r = c.post(f"{APP}/api/connect", json={
+    "base_url": "http://127.0.0.1:9443", "token": "mocktoken", "verify_ssl": False,
+    "remember": True, "profile_name": "Mock-E2E-2"})
+check("zweites profil", r.status_code == 200)
+names = [p["name"] for p in c.get(f"{APP}/api/connections").json()["profiles"]]
+check("beide profile gelistet", "Mock-E2E" in names and "Mock-E2E-2" in names, str(names))
+r = c.request("DELETE", f"{APP}/api/connections/Mock-E2E-2")
+check("profil geloescht", r.status_code == 200)
+names = [p["name"] for p in c.get(f"{APP}/api/connections").json()["profiles"]]
+check("loeschung wirksam", "Mock-E2E-2" not in names, str(names))
+r = c.request("DELETE", f"{APP}/api/connections/Gibtsnicht")
+check("loeschen unbekannt 404", r.status_code == 404)
 
 # 2) Inventar (Listing via X-HTTP-Method-Override-Fallback)
 r = c.get(f"{APP}/api/inventory")

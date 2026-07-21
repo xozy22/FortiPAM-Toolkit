@@ -50,6 +50,19 @@
       <div class="panel narrow">
         <div class="form-grid">
           <label>
+            <span class="lbl">Gespeicherte Verbindung</span>
+            <span class="form-row" style="margin-bottom:0">
+              <select id="connProfiles" style="min-width:250px">
+                <option value="">— Neue Verbindung —</option>
+              </select>
+              <button class="btn ghost danger" id="btnProfDelete" hidden>Löschen</button>
+            </span>
+          </label>
+          <label>
+            <span class="lbl">Name der Verbindung</span>
+            <input type="text" id="inProfName" placeholder="z. B. PAM Produktion" autocomplete="off" spellcheck="false">
+          </label>
+          <label>
             <span class="lbl">FortiPAM-URL</span>
             <input type="text" id="inUrl" placeholder="https://pam.example.com" autocomplete="off" spellcheck="false">
           </label>
@@ -68,15 +81,13 @@
             </label>
           </div>
           <label class="inline">
-            <input type="checkbox" id="inRemember">
-            <span>Zugangsdaten sicher speichern <em class="dim">(Windows-Kontoverschlüsselung, DPAPI)</em></span>
+            <input type="checkbox" id="inRemember" checked>
+            <span>Verbindung speichern <em class="dim">(Token DPAPI-verschlüsselt, an dieses Windows-Konto gebunden)</em></span>
           </label>
-          <div id="savedConnNote"></div>
         </div>
         <div class="btn-row">
           <button class="btn primary" id="btnConnect">Verbinden</button>
           <button class="btn ghost" id="btnDisconnect" disabled>Trennen</button>
-          <button class="btn ghost" id="btnForget" hidden>Gespeicherte Daten löschen</button>
         </div>
         <div class="conn-result" id="connResult"></div>
         <p class="hint">

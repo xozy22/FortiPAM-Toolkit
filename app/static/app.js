@@ -100,31 +100,54 @@ document.querySelectorAll(".step").forEach((s) =>
 
 /* ==== Verbindung ===================================================== */
 
-/* Gespeichertes Verbindungsprofil (Token liegt DPAPI-verschlüsselt beim Backend) */
-let savedConn = {};
-async function loadSavedConn() {
-  try {
-    savedConn = await api("/api/connection/saved") || {};
-  } catch (e) { savedConn = {}; }
-  if (savedConn.base_url) $("inUrl").value = savedConn.base_url;
-  if (savedConn.vdom) $("inVdom").value = savedConn.vdom;
-  $("inVerify").checked = !!savedConn.verify_ssl;
-  $("inRemember").checked = !!savedConn.has_token;
-  $("btnForget").hidden = !savedConn.base_url;
-  $("savedConnNote").innerHTML = savedConn.has_token
-    ? `<p class="hint" style="margin-top:6px">Gespeicherter Token vorhanden – Token-Feld leer
-       lassen, um ihn zu verwenden.</p>`
-    : "";
+/* Verbindungsmanager: mehrere benannte Profile, Token DPAPI-verschlüsselt */
+let connProfiles = [];
+
+function selectedProfile() {
+  const name = $("connProfiles").value;
+  return connProfiles.find((p) => p.name === name) || null;
 }
 
-$("btnForget").addEventListener("click", async () => {
-  await api("/api/connection/forget", { method: "POST" });
-  savedConn = {};
-  $("savedConnNote").innerHTML = "";
-  $("btnForget").hidden = true;
-  $("inRemember").checked = false;
-  addLog("info", "Gespeicherte Verbindungsdaten gelöscht.");
-  toast("Gespeicherte Daten gelöscht.", "ok");
+function fillConnForm(p) {
+  $("inProfName").value = p ? p.name : "";
+  $("inUrl").value = p ? p.base_url : "";
+  $("inVdom").value = p ? p.vdom : "";
+  $("inVerify").checked = p ? !!p.verify_ssl : false;
+  $("inToken").value = "";
+  $("inToken").placeholder = p && p.has_token
+    ? "leer lassen = gespeicherten Token verwenden"
+    : "API-Schlüssel des REST-API-Admins";
+  $("btnProfDelete").hidden = !p;
+}
+
+async function loadConnections(preselect) {
+  let data = {};
+  try {
+    data = await api("/api/connections") || {};
+  } catch (e) { data = {}; }
+  connProfiles = data.profiles || [];
+  const want = preselect !== undefined ? preselect : (data.last_used || "");
+  $("connProfiles").innerHTML = `<option value="">— Neue Verbindung —</option>` +
+    connProfiles.map((p) =>
+      `<option value="${esc(p.name)}"${p.name === want ? " selected" : ""}>` +
+      `${esc(p.name)} (${esc(String(p.base_url).replace(/^https?:\/\//, ""))})</option>`).join("");
+  fillConnForm(selectedProfile());
+}
+
+$("connProfiles").addEventListener("change", () => fillConnForm(selectedProfile()));
+
+$("btnProfDelete").addEventListener("click", async () => {
+  const p = selectedProfile();
+  if (!p) return;
+  if (!confirm(`Verbindung '${p.name}' löschen?\n\nDer gespeicherte Token wird dabei entfernt.`)) return;
+  try {
+    await api(`/api/connections/${encodeURIComponent(p.name)}`, { method: "DELETE" });
+    addLog("info", `Verbindung '${p.name}' gelöscht.`);
+    toast(`'${p.name}' gelöscht.`, "ok");
+    await loadConnections("");
+  } catch (e) {
+    toast(e.message, "err");
+  }
 });
 
 $("btnConnect").addEventListener("click", async () => {
@@ -132,6 +155,8 @@ $("btnConnect").addEventListener("click", async () => {
   btn.disabled = true; btn.textContent = "Verbinde …";
   try {
     const token = $("inToken").value.trim();
+    const profileName = $("inProfName").value.trim() || $("connProfiles").value || "";
+    const remember = $("inRemember").checked;
     const info = await api("/api/connect", {
       method: "POST",
       body: {
@@ -139,11 +164,14 @@ $("btnConnect").addEventListener("click", async () => {
         token,
         verify_ssl: $("inVerify").checked,
         vdom: $("inVdom").value.trim(),
-        remember: $("inRemember").checked,
-        use_saved_token: !token && !!savedConn.has_token,
+        remember,
+        profile_name: profileName,
       },
     });
-    loadSavedConn();
+    if (remember && !profileName) {
+      toast("Zum Speichern der Verbindung bitte einen Namen vergeben.", "err");
+    }
+    await loadConnections(profileName);
     setConnected(true, info);
     $("connResult").innerHTML = `
       <div class="conn-card">
@@ -1414,7 +1442,7 @@ document.querySelectorAll(".so-sel").forEach((sel) => {
     <option value="disable">deaktivieren</option>`;
 });
 (async () => {
-  await loadSavedConn();
+  await loadConnections();
   try {
     const st = await api("/api/status");
     if (st.connected && st.conn_info) {

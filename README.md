@@ -81,12 +81,20 @@ Live-Gerät).
    (`secret-dup-check`) — findet bestehende Zugänge auch unter anderem Namen
    und über Berechtigungsgrenzen hinweg
 
+### Verbindungsmanager
+- **Mehrere FortiPAM-Systeme** als benannte Profile speichern (z. B.
+  „PAM Produktion", „PAM Test") und per Dropdown umschalten
+- Der API-Token wird je Profil **DPAPI-verschlüsselt** abgelegt (an das
+  Windows-Benutzerkonto gebunden); Wiederverbinden ohne erneute Token-Eingabe
+- Zuletzt genutztes Profil wird beim Start vorausgewählt; Profile einzeln
+  löschbar (entfernt auch den gespeicherten Token)
+
 ### Sicherheit
 - Läuft ausschließlich auf `127.0.0.1` — keine Cloud, keine Telemetrie,
   keine externen CDNs (funktioniert in Netzen ohne Internetzugang)
-- API-Token standardmäßig **nur im Arbeitsspeicher**; optional
+- API-Token standardmäßig **nur im Arbeitsspeicher**; optional je Profil
   **DPAPI-verschlüsselt** gespeichert (an das Windows-Benutzerkonto gebunden,
-  `%APPDATA%\FortiPAM-Toolkit\connection.json`)
+  `%APPDATA%\FortiPAM-Toolkit\connections.json`)
 - Passwörter erscheinen weder in Vorschau noch Detailansicht im Klartext
 
 ## Schnellstart
@@ -128,9 +136,31 @@ und Secret-Berechtigung hinzufügen (Unterordner erben bei aktiver Vererbung).
 Das Inventar zeigt „sichtbar / gesamt" und warnt, wenn Einträge fehlen.
 Vom Toolkit angelegte Root-Ordner erhalten den API-User automatisch als Owner.
 
+### Verbindungen verwalten
+
+Oben in der Verbindungsmaske lassen sich mehrere FortiPAM-Systeme als
+**benannte Profile** ablegen und über das Dropdown „Gespeicherte Verbindung"
+umschalten:
+
+- **Neue Verbindung**: Name, URL und Token eingeben, „Verbindung speichern"
+  aktiviert lassen und verbinden — das Profil wird angelegt.
+- **Vorhandenes Profil nutzen**: im Dropdown wählen; URL/VDOM füllen sich
+  automatisch. Das Token-Feld bleibt leer — der gespeicherte Token wird
+  verwendet (nur eingeben, wenn er sich geändert hat).
+- **Profil löschen**: Profil wählen und „Löschen" — entfernt auch den
+  gespeicherten Token.
+
+Der Token wird je Profil **DPAPI-verschlüsselt** unter
+`%APPDATA%\FortiPAM-Toolkit\connections.json` abgelegt — entschlüsselbar nur
+vom angemeldeten Windows-Benutzer auf diesem Rechner. Ohne „Verbindung
+speichern" bleibt der Token nur im Arbeitsspeicher der laufenden Sitzung.
+Eine ältere Einzel-Ablage (`connection.json`) wird beim ersten Start
+automatisch als Profil „Standard" übernommen.
+
 ## Ablauf
 
-1. **Verbindung** — URL + API-Token (TLS-Prüfung optional, VDOM optional)
+1. **Verbindung** — Profil wählen oder neu anlegen (URL + API-Token,
+   TLS-Prüfung optional, VDOM optional)
 2. **Inventar** — Bestand sichten, exportieren, Details ansehen, aufräumen
 3. **Bulk-Import**
    1. *Datei*: Excel/CSV hochladen oder Vorlage generieren
@@ -225,11 +255,11 @@ Repos (geräte-spezifischer Dump) — bei Bedarf vom eigenen Gerät abrufbar:
 
 ```
 app/
-  main.py        FastAPI-Endpunkte, Inventar, Jobs
+  main.py        FastAPI-Endpunkte, Verbindungsmanager, Inventar, Jobs
   fortipam.py    REST-Client (Pagination, Override-Fallback, Retry)
   planner.py     Plan-Erstellung, Validierung, parallele Ausführung
   excel_io.py    Excel-/CSV-Parser, Vorlagen, Export
-  winsec.py      DPAPI-Verschlüsselung (Token-Ablage)
+  winsec.py      DPAPI-Verschlüsselung (Token-Ablage je Profil)
   static/        Oberfläche (index.html, app.js, style.css)
 dev/             Mock-FortiPAM + E2E-Testsuite
 start.bat        Start inkl. Einrichtung der virtuellen Umgebung
