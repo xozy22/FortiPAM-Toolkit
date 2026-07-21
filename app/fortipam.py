@@ -83,7 +83,10 @@ class FortiPAMClient:
                 parts.append(str(val).strip())
                 break
         err = data.get("error")
-        if err not in (None, 0, "0", ""):
+        if isinstance(err, str) and err.strip() and not err.strip().lstrip("-").isdigit():
+            # FortiPAM liefert hier teils Klartext (z. B. "Missing field in payload: 'x'")
+            parts.append(err.strip())
+        elif err not in (None, 0, "0", ""):
             parts.append(f"Fehlercode {err}")
         hint = _HTTP_HINTS.get(status_code)
         if hint:
@@ -120,3 +123,17 @@ class FortiPAMClient:
 
     def create(self, path: str, body: dict) -> dict:
         return self.request("POST", f"cmdb/{path}", body=body)
+
+    def dup_check(self, username: str, target_addr: str) -> tuple[bool, str]:
+        """Geräteseitige Duplikat-Prüfung: existiert bereits ein Secret mit
+        diesem Benutzernamen auf der Ziel-Adresse? (Internal-API, liefert
+        409 bei Duplikat, 200 sonst.)"""
+        try:
+            data = self.request("POST", "internal/secret-dup-check",
+                                body={"username": username, "target_addr": target_addr})
+            return False, str(data.get("msg") or "")
+        except FortiPAMError as exc:
+            if "HTTP 409" in str(exc):
+                msg = str(exc).replace("HTTP 409 — ", "").strip()
+                return True, msg
+            raise

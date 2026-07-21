@@ -22,7 +22,9 @@ Live-Gerät). Kernfunktionen:
   Mapping als **Profil** speicher- und wiederladbar (für wiederkehrende Importe)
 - Bulk-Erstellung von Targets und Secrets (optional inkl. fehlender Ordner),
   **parallelisiert** mit automatischem Retry bei Rate-Limits (HTTP 429)
-- Duplikat-Erkennung: bereits vorhandene Objekte werden übersprungen
+- Duplikat-Erkennung: bereits vorhandene Objekte werden übersprungen;
+  zusätzlich **geräteseitige Prüfung** ob zu Benutzername + Zieladresse schon
+  ein Secret existiert (Internal-API `secret-dup-check`, auch unter anderem Namen)
 - Vorschau (Plan) vor jeder Änderung, Live-Protokoll bei der Ausführung
 - Optionale Token-Speicherung, **DPAPI-verschlüsselt** an das
   Windows-Benutzerkonto gebunden
@@ -122,6 +124,16 @@ Diese Punkte weichen vom CMDB-Schema ab und sind im Toolkit berücksichtigt:
 - Template-Einzelabfragen liefern **403 auch für nicht existierende Namen**,
   wenn der API-User keine „create secret"-Berechtigung für das Template hat —
   nur 200-Antworten sind verlässlich nutzbar.
+- Das Listing-Verbot gilt für **alle Auth-Wege** (auch eingeloggte GUI-Session)
+  und ist mit dem offiziellen FPAM-API-SDK konsistent: Keine der vier
+  API-Spezifikationen (cmdb/monitor/internal/utility) enthält eine
+  Listing-Route für Targets oder Templates — Fortinets eigenes Tooling
+  arbeitet ebenfalls mit Einzelabfragen per ID/Name.
+- Nützliche Zusatz-APIs (gleiche Bearer-Auth): `POST /api/v2/internal/secret-dup-check`
+  (Duplikat-Prüfung per Benutzername + Zieladresse; 409 = Duplikat) — vom
+  Toolkit für die Plan-Warnungen genutzt. Außerdem vorhanden:
+  `secret-checkout`/`secret-checkin`/`secret-clear-text` (Internal) und
+  `GET /api/v2/utility/id/{pfad}?type=secret|folder` (ID-Auflösung per Pfad).
 
 ## Entwicklung / Testen ohne echtes Gerät
 

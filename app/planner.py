@@ -64,22 +64,28 @@ def folder_paths(folders: list[dict]) -> tuple[dict, dict]:
 # ======================================================================
 
 def build_plan(mapping: dict, rows: list[dict], inventory: dict,
-               target_checker=None) -> tuple[dict, dict]:
+               target_checker=None, dup_checker=None) -> tuple[dict, dict]:
     """Baut den Ausführungsplan. Rückgabe: (plan_intern, plan_maskiert).
 
     target_checker(name) -> True/False/None: Live-Existenzprüfung für Targets,
     nötig weil FortiPAM das Auflisten von secret/target per REST nicht erlaubt.
+    dup_checker(username, addr) -> (bool, msg) | None: geräteseitige
+    Duplikat-Prüfung über die Internal-API (secret-dup-check).
     """
     opts = mapping.get("options") or {}
     create_targets = bool(opts.get("create_targets"))
     create_secrets = bool(opts.get("create_secrets"))
     auto_folders = bool(opts.get("auto_create_folders"))
     folder_owner = str(opts.get("root_folder_owner") or "").strip()
+    dup_enabled = bool(opts.get("dup_check", True)) and dup_checker is not None
+    dup_cache: dict[tuple[str, str], object] = {}
 
     templates = {t.get("name", ""): t for t in inventory.get("templates", [])}
     tpl_lookup = {_norm(n): n for n in templates}
     class_tags = {_norm(t.get("name")): t.get("name") for t in inventory.get("class_tags", [])}
     existing_targets = {_norm(t.get("name")) for t in inventory.get("targets", [])}
+    target_addr_by_name = {_norm(t.get("name")): str(t.get("address") or "")
+                           for t in inventory.get("targets", [])}
     id_to_path, path_to_id = folder_paths(inventory.get("folders", []))
     existing_secrets = {(_norm(s.get("name")), int(s.get("folder", 0) or 0))
                        for s in inventory.get("secrets", [])}
@@ -204,18 +210,22 @@ def build_plan(mapping: dict, rows: list[dict], inventory: dict,
         for f in tpl.get("field", []) or []:
             sensitive_fields[(tname, f.get("name", ""))] = f.get("type") in SENSITIVE_TYPES
 
-    def build_fields(tpl_name: str, row: dict, warnings: list) -> list[dict]:
+    def build_fields(tpl_name: str, row: dict, warnings: list) -> tuple[list[dict], str]:
+        """Baut die Feldliste; liefert zusätzlich den Benutzernamen (für Duplikat-Prüfung)."""
         tpl = templates.get(tpl_name) or {}
         fmap = fields_map.get(tpl_name) or {}
         out = []
+        username = ""
         for pos, f in enumerate(tpl.get("field", []) or [], start=1):
             fname = f.get("name", "")
             val = resolve_source(fmap.get(fname), row)
             if val:
                 out.append({"id": pos, "name": fname, "value": val})
+                if f.get("type") == "username" and not username:
+                    username = val
             elif f.get("mandatory") == "enable" and f.get("type") in ("username", "password"):
                 warnings.append(f"Pflichtfeld '{fname}' ist leer")
-        return out
+        return out, username
 
     # ---- Zeilen durchgehen -------------------------------------------
     targets_plan: dict[str, dict] = {}   # norm_name -> eintrag
@@ -292,7 +302,7 @@ def build_plan(mapping: dict, rows: list[dict], inventory: dict,
                 desc = resolve_source(smap.get("description"), row)
                 if desc:
                     body["description"] = desc
-                body["field"] = build_fields(secret_tpl, row, warnings)
+                body["field"], username_val = build_fields(secret_tpl, row, warnings)
 
                 action = "create"
                 if folder_id is not None and (_norm(s_name), folder_id) in existing_secrets:
@@ -304,6 +314,25 @@ def build_plan(mapping: dict, rows: list[dict], inventory: dict,
                 if dup and action == "create":
                     action = "duplicate"
                     warnings.append(f"Doppelt in Datei (zuerst Zeile {dup['row']})")
+
+                # geräteseitige Duplikat-Prüfung (Benutzername + Ziel-Adresse)
+                if action == "create" and dup_enabled and username_val:
+                    tkey = _norm(target_ref)
+                    if tkey in targets_plan:
+                        addr = str(targets_plan[tkey]["body"].get("address") or "")
+                    else:
+                        addr = target_addr_by_name.get(tkey, "")
+                    if addr:
+                        cache_key = (username_val.lower(), addr.lower())
+                        if cache_key not in dup_cache:
+                            dup_cache[cache_key] = dup_checker(username_val, addr)
+                        result = dup_cache[cache_key]
+                        if result is None:
+                            warnings.append("Duplikat-Prüfung (Benutzer/Adresse) nicht möglich")
+                        elif result[0]:
+                            warnings.append(
+                                f"Gerät meldet bestehendes Secret für '{username_val}' "
+                                f"auf {addr}: {result[1]}")
 
                 secrets_plan.append({
                     "row": rownum, "name": s_name, "action": action,

@@ -8,3 +8,7 @@ dist/
 
 # Geräte-spezifischer Schema-Dump (enthält Seriennummer, nicht Teil des Repos)
 FortiPAM_json_api_ref.json
+
+# FNDN-Material (Fortinet, nur hinter Partner-Login) – nicht veröffentlichen
+FPAM_1.5_API_SDK/
+ansible_plugin/

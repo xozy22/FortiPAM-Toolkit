@@ -383,8 +383,16 @@ def make_plan(mapping: dict = Body(...)):
         except FortiPAMError:
             return None
 
+    def dup_checker(username: str, addr: str):
+        """Geräteseitige Duplikat-Prüfung (Internal-API secret-dup-check)."""
+        try:
+            return client.dup_check(username, addr)
+        except FortiPAMError:
+            return None
+
     checker = None if inv.get("target_listing", True) else target_checker
-    plan, public = planner.build_plan(mapping, excel["rows"], inv, target_checker=checker)
+    plan, public = planner.build_plan(mapping, excel["rows"], inv,
+                                      target_checker=checker, dup_checker=dup_checker)
     STATE["plan"] = plan
     return public
 

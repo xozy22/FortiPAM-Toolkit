@@ -690,6 +690,7 @@ function applyMapping(m) {
   $("optTargets").checked = !!opts.create_targets;
   $("optSecrets").checked = !!opts.create_secrets;
   $("optAutoFolders").checked = !!opts.auto_create_folders;
+  $("optDupCheck").checked = opts.dup_check !== false;
   $("optTargets").onchange(); $("optSecrets").onchange();
 
   // Secret-Typ-Quelle
@@ -821,6 +822,7 @@ function collectMapping() {
       // "Fester Pfad" impliziert das Anlegen fehlender Ordner
       auto_create_folders: $("optAutoFolders").checked || mode === "fixed_path",
       root_folder_owner: $("folderOwner").value || "",
+      dup_check: $("optDupCheck").checked,
     },
     target: {
       name: getSrc("tName"), address: getSrc("tAddr"), class: getSrc("tClass"),

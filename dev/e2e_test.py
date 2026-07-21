@@ -27,6 +27,12 @@ cl = FortiPAMClient("http://127.0.0.1:9443", "mocktoken", verify_ssl=False)
 resp = cl.create("secret/target", {"name": "RATE429-test", "template": "x", "class": "Import"})
 check("429-retry", resp.get("status") == "success", str(resp)[:120])
 cl.request("DELETE", "cmdb/secret/target/RATE429-test")
+
+# Geräteseitige Duplikat-Prüfung (Internal-API): root@10.0.0.5 existiert im Mock
+is_dup, msg = cl.dup_check("root", "10.0.0.5")
+check("dup-check positiv", is_dup and "owned" in msg, f"{is_dup} {msg[:60]}")
+is_dup, msg = cl.dup_check("niemand", "10.0.0.5")
+check("dup-check negativ", not is_dup, f"{is_dup} {msg[:60]}")
 cl.close()
 
 # 1) Verbinden (mit DPAPI-Speicherung)
@@ -176,5 +182,24 @@ s2 = r.json()["summary"]
 check("idempotenz targets", s2["targets_create"] == 0 and s2["targets_exist"] == 3, str(s2))
 check("idempotenz secrets", s2["secrets_create"] == 0 and s2["secrets_exist"] == 3, str(s2))
 check("idempotenz ordner", s2["folders_create"] == 0, str(s2))
+
+# 9) Geräteprüfung im Plan: Zeile kollidiert mit bestehendem Secret (root@10.0.0.5)
+import io
+from openpyxl import Workbook
+
+wb = Workbook()
+ws = wb.active
+ws.append(["Name", "Adresse", "Secret-Typ", "Benutzername", "Passwort", "Domäne", "Ordner"])
+ws.append(["srv-kollision-01", "10.0.0.5", "linux", "root", "Xx!12345", "", "Linux/Produktion"])
+buf = io.BytesIO()
+wb.save(buf)
+r = c.post(f"{APP}/api/excel/upload",
+           files={"file": ("kollision.xlsx", buf.getvalue(),
+                           "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")})
+check("upload kollisionstest", r.status_code == 200)
+r = c.post(f"{APP}/api/plan", json=mapping)
+sec = r.json()["secrets"][0]
+check("dup-warnung im plan", any("bestehendes Secret" in w for w in sec.get("warnings", [])),
+      str(sec.get("warnings")))
 
 print("\nAlle Tests bestanden.")

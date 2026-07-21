@@ -27,7 +27,9 @@ DB = {
     "secret/database": [
         {"id": 100, "name": "srv-alt-01", "folder": 2,
          "template": "Unix Account (SSH Password)", "target": "srv-alt-01",
-         "description": "Bestand"},
+         "description": "Bestand",
+         "field": [{"id": 2, "name": "Username", "value": "root"},
+                   {"id": 3, "name": "Password", "value": "AltesPasswort1!"}]},
     ],
     "secret/template": [
         {"name": "Unix Account (SSH Password)", "server-info": "Unix-like",
@@ -113,6 +115,25 @@ async def delete_one(p1: str, p2: str, mkey: str):
         return err(404, "entry not found")
     DB[key].remove(row)
     return {"http_method": "DELETE", "status": "success", "http_status": 200}
+
+
+@app.post("/api/v2/internal/secret-dup-check")
+async def secret_dup_check(request: Request):
+    """Wie am echten Gerät beobachtet: 409 bei Benutzer+Adresse-Duplikat, sonst 200."""
+    body = await request.json()
+    username = str(body.get("username") or "")
+    addr = str(body.get("target_addr") or "")
+    addr_by_target = {t.get("name"): t.get("address") for t in DB["secret/target"]}
+    for s in DB["secret/database"]:
+        has_user = any(f.get("name") == "Username" and f.get("value") == username
+                       for f in (s.get("field") or []))
+        if has_user and addr_by_target.get(s.get("target")) == addr:
+            return JSONResponse(
+                {"status": "Conflict", "http_status": 409,
+                 "error": "Current credential is owned by [api], please contact the owner",
+                 "http_method": "POST"}, status_code=409)
+    return {"status": "OK", "http_status": 200,
+            "msg": "No duplicate secret found", "http_method": "POST"}
 
 
 @app.post("/api/v2/cmdb/{p1}/{p2}")
