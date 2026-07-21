@@ -15,13 +15,19 @@ Fortinet **FortiPAM** (getestet gegen API v1.9.0, Build 1751 — Mock und
 Live-Gerät). Kernfunktionen:
 
 - Bestand auslesen (Targets, Secrets, Ordner, Templates, Klassifizierungen)
-  und als **Excel exportieren**
-- Excel-Datei (.xlsx) einlesen; **Vorlagen-Generator** passend zu den
-  Templates des eigenen FortiPAM
+  und als **Excel exportieren**; **Detailansicht** per Klick (Passwörter
+  maskiert); seitenweises Laden auch bei großen Beständen
+- **Bulk-Löschen** direkt im Inventar (Auswahl per Checkbox, doppelte
+  Bestätigung, Reihenfolge Secrets → Targets → Ordner)
+- Excel- (.xlsx) oder **CSV**-Datei einlesen; **Vorlagen-Generator** passend
+  zu den Templates des eigenen FortiPAM
 - Spalten-Mapping inkl. Zuordnung *Secret-Typ → FortiPAM-Template*;
   Mapping als **Profil** speicher- und wiederladbar (für wiederkehrende Importe)
 - Bulk-Erstellung von Targets und Secrets (optional inkl. fehlender Ordner),
   **parallelisiert** mit automatischem Retry bei Rate-Limits (HTTP 429)
+- **Passwort-Generator** für leere Pflicht-Passwortfelder (starke
+  Zufallswerte, Länge einstellbar) und **Secret-Optionen** pro Import
+  (Checkout, Aufzeichnung, Password-Changer, Heartbeat)
 - Duplikat-Erkennung: bereits vorhandene Objekte werden übersprungen;
   zusätzlich **geräteseitige Prüfung** ob zu Benutzername + Zieladresse schon
   ein Secret existiert (Internal-API `secret-dup-check`, auch unter anderem Namen)

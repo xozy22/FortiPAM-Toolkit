@@ -155,6 +155,8 @@ input[type=checkbox] { accent-color: var(--accent); width: 15px; height: 15px; }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: #14100d; }
 .btn.primary:hover:not(:disabled) { background: #ff824d; }
 .btn.ghost:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.btn.danger { border-color: var(--err); color: var(--err); }
+.btn.danger:hover:not(:disabled) { background: rgba(255,93,93,.12); border-color: var(--err); color: var(--err); }
 .btn:disabled { opacity: .4; cursor: not-allowed; }
 .btn-row { display: flex; gap: 12px; margin-top: 18px; flex-wrap: wrap; }
 
@@ -196,6 +198,30 @@ th {
 td { padding: 7px 12px; border-bottom: 1px solid var(--line-soft); vertical-align: top; }
 tbody tr:hover { background: rgba(255,255,255,.02); }
 .empty-note { color: var(--dim); font-family: var(--font-mono); font-size: 13px; padding: 18px 4px; }
+tbody tr.clickable { cursor: pointer; }
+th.sel-col, td.sel-col { width: 30px; text-align: center; }
+
+/* Detail-Panel im Inventar */
+.detail-box {
+  border: 1px solid var(--accent); background: var(--bg-deep);
+  padding: 14px 16px; margin-bottom: 14px; position: relative;
+}
+.detail-box h3 {
+  font-size: 12px; letter-spacing: .12em; text-transform: uppercase;
+  color: var(--accent); margin-bottom: 10px;
+}
+.detail-box .close-x {
+  position: absolute; top: 8px; right: 12px; cursor: pointer;
+  color: var(--dim); font-family: var(--font-mono); font-size: 14px;
+  background: none; border: none;
+}
+.detail-box .close-x:hover { color: var(--err); }
+.detail-grid {
+  display: grid; grid-template-columns: 220px 1fr; gap: 4px 16px;
+  font-family: var(--font-mono); font-size: 12.5px; max-height: 320px; overflow-y: auto;
+}
+.detail-grid .k { color: var(--dim); }
+.detail-grid .v { word-break: break-all; }
 
 /* ==== Badges ========================================================= */
 .badge {

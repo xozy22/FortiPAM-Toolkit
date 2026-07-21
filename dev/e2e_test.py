@@ -213,4 +213,90 @@ sec = r.json()["secrets"][0]
 check("target-address-warnung", any("Ziel-Adresse" in w for w in sec.get("warnings", [])),
       str(sec.get("warnings")))
 
+# 11) CSV-Upload
+csv_text = ("Name;Adresse;Secret-Typ;Benutzername;Passwort;Domäne;Ordner\r\n"
+            "csv-srv-01;10.10.9.1;linux;root;CsvPw1!;;Linux/Produktion\r\n")
+r = c.post(f"{APP}/api/excel/upload",
+           files={"file": ("import.csv", csv_text.encode("utf-8-sig"), "text/csv")})
+up = r.json()
+check("csv upload", r.status_code == 200 and up["row_count"] == 1, str(up)[:150])
+check("csv headers", up["headers"][0] == "Name" and "Ordner" in up["headers"],
+      str(up["headers"]))
+
+# 12) Passwort-Generator + Secret-Optionen
+wb = Workbook()
+ws = wb.active
+ws.append(["Name", "Adresse", "Secret-Typ", "Benutzername", "Passwort", "Domäne", "Ordner"])
+ws.append(["srv-gen-01", "10.10.9.2", "linux", "genuser", "", "", "Linux/Produktion"])
+buf = io.BytesIO()
+wb.save(buf)
+r = c.post(f"{APP}/api/excel/upload",
+           files={"file": ("gen.xlsx", buf.getvalue(),
+                           "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")})
+check("upload gen", r.status_code == 200)
+m3 = copy.deepcopy(mapping)
+m3["options"]["generate_passwords"] = True
+m3["options"]["password_length"] = 24
+m3["secret"]["options"] = {"checkout": "enable", "recording": "enable"}
+r = c.post(f"{APP}/api/plan", json=m3)
+sec = r.json()["secrets"][0]
+check("gen plan create", sec["action"] == "create", str(sec)[:150])
+check("gen warnung", any("generiert" in w for w in sec.get("warnings", [])),
+      str(sec.get("warnings")))
+pw_field = next((f for f in sec["body"]["field"] if f["name"] == "Password"), None)
+check("gen passwort maskiert", pw_field is not None and pw_field["value"] == "••••••",
+      str(pw_field))
+r = c.post(f"{APP}/api/execute")
+check("gen execute start", r.status_code == 200)
+for _ in range(60):
+    j = c.get(f"{APP}/api/execute/status").json()
+    if j.get("finished"):
+        break
+    time.sleep(0.25)
+errors = [i for i in j["items"] if i["status"] == "error"]
+check("gen execute ok", j.get("finished") and not errors,
+      json.dumps(errors, ensure_ascii=False)[:200])
+mock = httpx.get("http://127.0.0.1:9443/api/v2/cmdb/secret/database").json()["results"]
+gen = next(s for s in mock if s["name"] == "srv-gen-01")
+pw = next(f["value"] for f in gen["field"] if f["name"] == "Password")
+check("gen passwort stark", len(pw) == 24 and any(ch.isdigit() for ch in pw), pw[:3] + "…")
+check("secret-optionen gesetzt",
+      gen.get("checkout") == "enable" and gen.get("recording") == "enable",
+      str({k: gen.get(k) for k in ("checkout", "recording")}))
+
+# 13) Detailansicht (Passwörter maskiert)
+r = c.get(f"{APP}/api/object/secret/{gen['id']}")
+det = r.json()
+check("detail secret maskiert", r.status_code == 200 and
+      all(f["value"] == "••••••" for f in det["field"] if f["name"] == "Password"),
+      str(det.get("field"))[:150])
+r = c.get(f"{APP}/api/object/target/srv-gen-01")
+check("detail target", r.status_code == 200 and r.json().get("address") == "10.10.9.2",
+      r.text[:120])
+
+# 14) Pagination (page_size=2 über den Client)
+folders_all = httpx.get("http://127.0.0.1:9443/api/v2/cmdb/secret/folder").json()["results"]
+cl2 = FortiPAMClient("http://127.0.0.1:9443", "mocktoken", verify_ssl=False)
+rows, env = cl2.list_table("secret/folder", page_size=2)
+cl2.close()
+check("pagination vollständig",
+      len(rows) == len(folders_all) and env.get("size") == len(folders_all),
+      f"paged={len(rows)} direkt={len(folders_all)} size={env.get('size')}")
+
+# 15) Bulk-Löschen über die App
+r = c.post(f"{APP}/api/delete", json={"items": [
+    {"kind": "secret", "mkey": gen["id"], "label": "srv-gen-01"},
+    {"kind": "target", "mkey": "srv-gen-01", "label": "srv-gen-01"}]})
+check("delete start", r.status_code == 200, r.text[:100])
+for _ in range(60):
+    j = c.get(f"{APP}/api/execute/status").json()
+    if j.get("finished"):
+        break
+    time.sleep(0.25)
+check("delete fertig", j.get("finished") and all(i["status"] == "ok" for i in j["items"]),
+      json.dumps(j.get("items"), ensure_ascii=False)[:200])
+mock = httpx.get("http://127.0.0.1:9443/api/v2/cmdb/secret/database").json()["results"]
+check("delete verifiziert", not any(s["name"] == "srv-gen-01" for s in mock),
+      str([s["name"] for s in mock]))
+
 print("\nAlle Tests bestanden.")

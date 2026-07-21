@@ -236,6 +236,13 @@ function renderInvTiles() {
     <div class="tile dim"><div class="num">${inv.class_tags.length}</div><div class="cap">Klassifizierungen</div></div>`;
 }
 
+/* Auswahl-/Detail-Konfiguration je Inventar-Tab */
+const SELECTABLE = {
+  secrets: { kind: "secret", mkey: (r) => r.id, label: (r) => r.name || String(r.id) },
+  targets: { kind: "target", mkey: (r) => r.name, label: (r) => r.name },
+  folders: { kind: "folder", mkey: (r) => r.id, label: (r) => r.path || r.name },
+};
+
 function renderInvTable() {
   const cols = INV_COLS[S.invTab];
   const data = S.inventory[S.invTab] || [];
@@ -243,6 +250,7 @@ function renderInvTable() {
   const rows = q
     ? data.filter((r) => cols.some((c) => String(r[c.k] ?? "").toLowerCase().includes(q)))
     : data;
+  S.invRows = rows;
   let note = "";
   const tot = S.inventory.totals || {};
   if ((S.invTab === "secrets" && tot.secrets != null && tot.secrets > S.inventory.secrets.length) ||
@@ -266,7 +274,129 @@ function renderInvTable() {
       REST-API. Angezeigt werden per Einzelabfrage gefundene Templates, für die der API-User
       Berechtigung hat. Weitere Templates können im Import-Mapping per Name geladen werden.</div>`;
   }
-  $("invTable").innerHTML = note + tableHTML(cols, rows);
+
+  const sel = SELECTABLE[S.invTab];
+  if (!rows.length) {
+    $("invTable").innerHTML = note + `<p class="empty-note">Keine Einträge.</p>`;
+  } else {
+    const head = (sel ? `<th class="sel-col"><input type="checkbox" id="selAll" title="alle (gefilterten) auswählen"></th>` : "") +
+      cols.map((c) => `<th>${esc(c.l)}</th>`).join("");
+    const body = rows.map((r, i) =>
+      `<tr class="clickable" data-idx="${i}">` +
+      (sel ? `<td class="sel-col"><input type="checkbox" class="sel-row" data-idx="${i}"></td>` : "") +
+      cols.map((c) => `<td>${c.r ? c.r(r) : esc(r[c.k] ?? "")}</td>`).join("") + "</tr>"
+    ).join("");
+    $("invTable").innerHTML = note +
+      `<table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
+  }
+
+  const selAll = $("selAll");
+  if (selAll) selAll.addEventListener("change", () => {
+    $("invTable").querySelectorAll(".sel-row").forEach((cb) => (cb.checked = selAll.checked));
+    updateDeleteBtn();
+  });
+  $("invTable").querySelectorAll(".sel-row").forEach((cb) =>
+    cb.addEventListener("change", updateDeleteBtn));
+  $("invTable").querySelectorAll("tr.clickable").forEach((tr) =>
+    tr.addEventListener("click", (e) => {
+      if (e.target.closest(".sel-col")) return;
+      openDetail(+tr.dataset.idx);
+    }));
+  updateDeleteBtn();
+}
+
+function updateDeleteBtn() {
+  const sel = SELECTABLE[S.invTab];
+  const n = document.querySelectorAll("#invTable .sel-row:checked").length;
+  const btn = $("btnDelete");
+  btn.hidden = !sel || n === 0;
+  btn.textContent = `Auswahl löschen (${n})`;
+}
+
+/* ---- Detailansicht -------------------------------------------------- */
+
+async function openDetail(idx) {
+  const r = S.invRows[idx];
+  if (!r) return;
+  const km = { secrets: ["secret", r.id], targets: ["target", r.name],
+               templates: ["template", r.name], folders: ["folder", r.id] }[S.invTab];
+  if (!km) return;
+  const [kind, mkey] = km;
+  let obj = r;
+  if (S.invTab === "secrets" || S.invTab === "targets") {
+    try {
+      obj = await api(`/api/object/${kind}/${encodeURIComponent(mkey)}`);
+    } catch (e) { toast(e.message, "err"); return; }
+  }
+  const entries = Object.entries(obj)
+    .filter(([k, v]) => !k.startsWith("q_") && k !== "_fields" && v !== "" && v != null
+      && !(Array.isArray(v) && v.length === 0))
+    .map(([k, v]) => {
+      const val = (typeof v === "object") ? JSON.stringify(v, null, 1) : String(v);
+      return `<span class="k">${esc(k)}</span><span class="v">${esc(val)}</span>`;
+    }).join("");
+  $("invDetail").innerHTML = `<div class="detail-box">
+    <button class="close-x" title="Schließen">✕</button>
+    <h3>${esc(kind)} · ${esc(String(obj.name ?? mkey))}</h3>
+    <div class="detail-grid">${entries}</div></div>`;
+  $("invDetail").querySelector(".close-x").addEventListener("click",
+    () => { $("invDetail").innerHTML = ""; });
+}
+
+/* ---- Bulk-Löschen --------------------------------------------------- */
+
+$("btnDelete").addEventListener("click", async () => {
+  const sel = SELECTABLE[S.invTab];
+  if (!sel) return;
+  const items = [...document.querySelectorAll("#invTable .sel-row:checked")].map((cb) => {
+    const r = S.invRows[+cb.dataset.idx];
+    return { kind: sel.kind, mkey: sel.mkey(r), label: String(sel.label(r)) };
+  });
+  if (!items.length) return;
+  const preview = items.slice(0, 10).map((i) => i.label).join("\n· ");
+  if (!confirm(`${items.length} Objekt(e) löschen?\n\n· ${preview}` +
+               (items.length > 10 ? `\n… und ${items.length - 10} weitere` : ""))) return;
+  if (!confirm(`Wirklich ENDGÜLTIG löschen?\n\n${items.length} Objekt(e) auf ` +
+               `${$("connText").textContent}\n\nDies kann nicht rückgängig gemacht werden.`)) return;
+  try {
+    await api("/api/delete", { method: "POST", body: { items } });
+    addLog("warn", `Löschvorgang gestartet: ${items.length} Objekt(e).`);
+    pollDelete();
+  } catch (e) {
+    toast(e.message, "err");
+  }
+});
+
+function pollDelete() {
+  const box = $("invConsole");
+  box.hidden = false;
+  box.innerHTML = "";
+  let rendered = 0;
+  const tick = async () => {
+    try {
+      const j = await api("/api/execute/status");
+      for (; rendered < j.items.length; rendered++) {
+        const it = j.items[rendered];
+        const line = document.createElement("div");
+        line.className = it.status === "ok" ? "cl-ok" : "cl-err";
+        line.textContent = `${it.status === "ok" ? "✔" : "✘"} ${it.kind} ${it.name} — ${it.message}`;
+        box.appendChild(line);
+        addLog(it.status === "ok" ? "ok" : "err", `Löschen ${it.kind} ${it.name}: ${it.message}`);
+      }
+      box.scrollTop = box.scrollHeight;
+      if (j.finished) {
+        const errs = j.items.filter((i) => i.status === "error").length;
+        toast(errs ? `Löschen beendet – ${errs} Fehler.` : "Objekte gelöscht.", errs ? "err" : "ok");
+        $("invDetail").innerHTML = "";
+        await loadInventory(true);
+        return;
+      }
+      setTimeout(tick, 600);
+    } catch (e) {
+      toast(e.message, "err");
+    }
+  };
+  tick();
 }
 
 function tableHTML(cols, rows) {
@@ -708,6 +838,14 @@ function applyMapping(m) {
   $("optSecrets").checked = !!opts.create_secrets;
   $("optAutoFolders").checked = !!opts.auto_create_folders;
   $("optDupCheck").checked = opts.dup_check !== false;
+  $("optGenPw").checked = !!opts.generate_passwords;
+  if (opts.password_length) $("optGenLen").value = opts.password_length;
+  const soIds = { "checkout": "soCheckout", "recording": "soRecording",
+                  "password-changer": "soPwChanger", "password-heartbeat": "soHeartbeat" };
+  const sopts = (m.secret || {}).options || {};
+  for (const [key, id] of Object.entries(soIds)) {
+    $(id).value = ["enable", "disable"].includes(sopts[key]) ? sopts[key] : "";
+  }
   $("optTargets").onchange(); $("optSecrets").onchange();
 
   // Secret-Typ-Quelle
@@ -840,6 +978,8 @@ function collectMapping() {
       auto_create_folders: $("optAutoFolders").checked || mode === "fixed_path",
       root_folder_owner: $("folderOwner").value || "",
       dup_check: $("optDupCheck").checked,
+      generate_passwords: $("optGenPw").checked,
+      password_length: +$("optGenLen").value || 20,
     },
     target: {
       name: getSrc("tName"), address: getSrc("tAddr"), class: getSrc("tClass"),
@@ -850,6 +990,12 @@ function collectMapping() {
       name: getSrc("sName"), description: getSrc("sDesc"),
       target: { type: "row_target" },
       folder, template, fields,
+      options: {
+        "checkout": $("soCheckout").value,
+        "recording": $("soRecording").value,
+        "password-changer": $("soPwChanger").value,
+        "password-heartbeat": $("soHeartbeat").value,
+      },
     },
   };
 }
@@ -1031,6 +1177,11 @@ $("btnLogSave").addEventListener("click", () => {
 /* ==== Start ========================================================== */
 
 addLog("info", "FortiPAM Toolkit gestartet.");
+document.querySelectorAll(".so-sel").forEach((sel) => {
+  sel.innerHTML = `<option value="">— Gerätestandard —</option>
+    <option value="enable">aktivieren</option>
+    <option value="disable">deaktivieren</option>`;
+});
 (async () => {
   await loadSavedConn();
   try {

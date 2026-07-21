@@ -1,6 +1,7 @@
-"""Excel-Import (openpyxl) und Erzeugung der Beispiel-Vorlage."""
+"""Excel-/CSV-Import (openpyxl) und Erzeugung der Beispiel-Vorlage."""
 from __future__ import annotations
 
+import csv
 import datetime
 import io
 
@@ -36,6 +37,73 @@ def _dedupe_headers(raw: list[str]) -> list[str]:
             seen[name] = 1
         out.append(name)
     return out
+
+
+def parse_any(data: bytes, filename: str, sheet_name: str | None = None) -> dict:
+    """Wählt anhand der Dateiendung zwischen CSV- und Excel-Parser."""
+    if str(filename).lower().endswith(".csv"):
+        return parse_csv(data)
+    return parse_workbook(data, sheet_name=sheet_name)
+
+
+def parse_csv(data: bytes) -> dict:
+    """Parst eine CSV-Datei (Trennzeichen wird automatisch erkannt)."""
+    text = None
+    for enc in ("utf-8-sig", "utf-8", "cp1252"):
+        try:
+            text = data.decode(enc)
+            break
+        except UnicodeDecodeError:
+            continue
+    if text is None:
+        raise ValueError("CSV-Datei konnte nicht dekodiert werden (UTF-8/CP1252).")
+
+    sample = text[:4096]
+    try:
+        dialect = csv.Sniffer().sniff(sample, delimiters=";,\t|")
+    except csv.Error:
+        # Fallback: Semikolon (deutsches Excel), sonst Komma
+        class dialect(csv.excel):  # noqa: N801
+            delimiter = ";" if sample.count(";") >= sample.count(",") else ","
+
+    headers: list[str] = []
+    rows: list[dict] = []
+    truncated = False
+    for row_no, raw in enumerate(csv.reader(io.StringIO(text), dialect), start=1):
+        vals = [str(v).strip() for v in raw]
+        if not headers:
+            if any(vals):
+                headers = _dedupe_headers(vals)
+            continue
+        if not any(vals):
+            continue
+        entry = {"_row": row_no}
+        for i, h in enumerate(headers):
+            entry[h] = vals[i] if i < len(vals) else ""
+        rows.append(entry)
+        if len(rows) >= MAX_ROWS:
+            truncated = True
+            break
+
+    if not headers:
+        raise ValueError("Keine Kopfzeile in der CSV-Datei gefunden.")
+
+    distinct: dict[str, list[str]] = {}
+    for h in headers:
+        vals = sorted({r[h] for r in rows if r.get(h)})
+        if 0 < len(vals) <= MAX_DISTINCT:
+            distinct[h] = vals
+
+    return {
+        "sheets": ["CSV"],
+        "sheet": "CSV",
+        "header_row": 1,
+        "headers": headers,
+        "rows": rows,
+        "row_count": len(rows),
+        "distinct": distinct,
+        "truncated": truncated,
+    }
 
 
 def parse_workbook(data: bytes, sheet_name: str | None = None) -> dict:

@@ -290,9 +290,9 @@ async def excel_upload(file: UploadFile = File(...)):
     if not data:
         raise HTTPException(status_code=400, detail="Leere Datei.")
     try:
-        parsed = excel_io.parse_workbook(data)
+        parsed = excel_io.parse_any(data, file.filename or "")
     except Exception as exc:
-        raise HTTPException(status_code=400, detail=f"Excel konnte nicht gelesen werden: {exc}")
+        raise HTTPException(status_code=400, detail=f"Datei konnte nicht gelesen werden: {exc}")
     parsed["filename"] = file.filename
     STATE["excel_bytes"] = data
     STATE["excel"] = parsed
@@ -305,7 +305,8 @@ def excel_sheet(payload: dict = Body(...)):
     data = _require("excel_bytes", "Keine Excel-Datei geladen.")
     old = STATE.get("excel") or {}
     try:
-        parsed = excel_io.parse_workbook(data, sheet_name=payload.get("sheet"))
+        parsed = excel_io.parse_any(data, old.get("filename", ""),
+                                    sheet_name=payload.get("sheet"))
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Blatt konnte nicht gelesen werden: {exc}")
     parsed["filename"] = old.get("filename", "")
@@ -367,6 +368,99 @@ def inventory_export():
     data = excel_io.inventory_workbook(inv)
     stamp = time.strftime("%Y-%m-%d")
     return _xlsx_response(data, f"FortiPAM_Inventar_{stamp}.xlsx")
+
+
+# ======================================================================
+# Objekt-Details & Bulk-Löschen
+# ======================================================================
+
+_OBJECT_PATHS = {
+    "secret": ("secret/database", True),
+    "target": ("secret/target", False),
+    "template": ("secret/template", False),
+    "folder": ("secret/folder", False),
+}
+
+
+@app.get("/api/object/{kind}/{mkey}")
+def object_detail(kind: str, mkey: str):
+    client = _require("client", "Nicht mit FortiPAM verbunden.")
+    if kind not in _OBJECT_PATHS:
+        raise HTTPException(status_code=400, detail="Unbekannter Objekttyp.")
+    path, mask_fields = _OBJECT_PATHS[kind]
+    try:
+        obj = client.get_by_mkey(path, mkey)
+    except FortiPAMError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+    if obj is None:
+        raise HTTPException(status_code=404, detail="Objekt nicht gefunden.")
+    obj = copy.deepcopy(obj)
+    obj.pop("q_origin_key", None)
+    if mask_fields:
+        # Sensible Feldtypen zusätzlich über die Template-Definition ermitteln
+        # (falls die Feld-Antwort selbst keinen "type" trägt)
+        tpl_types: dict[str, str] = {}
+        inv = STATE.get("inventory") or {}
+        for tpl in inv.get("templates", []):
+            if tpl.get("name") == obj.get("template"):
+                tpl_types = {f.get("name"): f.get("type")
+                             for f in (tpl.get("field") or [])}
+                break
+        for f in obj.get("field", []) or []:
+            ftype = f.get("type") or tpl_types.get(f.get("name"))
+            if ftype in planner.SENSITIVE_TYPES and f.get("value"):
+                f["value"] = planner.MASK
+        obj.pop("credentials-history", None)
+    return obj
+
+
+@app.post("/api/delete")
+def bulk_delete(payload: dict = Body(...)):
+    client = _require("client", "Nicht mit FortiPAM verbunden.")
+    items = payload.get("items") or []
+    if not isinstance(items, list) or not items:
+        raise HTTPException(status_code=400, detail="Keine Objekte ausgewählt.")
+    for it in items:
+        if it.get("kind") not in ("secret", "target", "folder"):
+            raise HTTPException(status_code=400,
+                                detail=f"Objekttyp '{it.get('kind')}' nicht löschbar.")
+    with JOB_LOCK:
+        job = STATE.get("job")
+        if job and job.get("running"):
+            raise HTTPException(status_code=409, detail="Es läuft bereits ein Vorgang.")
+        job = {"running": True, "finished": False, "cancel": False,
+               "done": 0, "total": len(items), "items": [],
+               "started": time.strftime("%H:%M:%S")}
+        STATE["job"] = job
+
+    # Reihenfolge: Secrets -> Targets -> Ordner (tiefste zuerst)
+    order = {"secret": 0, "target": 1, "folder": 2}
+    def depth(it):
+        return -str(it.get("label", "")).count("/") if it.get("kind") == "folder" else 0
+    todo = sorted(items, key=lambda it: (order[it["kind"]], depth(it)))
+
+    def worker():
+        for it in todo:
+            if job.get("cancel"):
+                break
+            path, _ = _OBJECT_PATHS[it["kind"]]
+            label = str(it.get("label") or it.get("mkey"))
+            try:
+                client.delete(path, it.get("mkey"))
+                status, msg = "ok", "gelöscht"
+            except FortiPAMError as exc:
+                status, msg = "error", str(exc)
+            with JOB_LOCK:
+                job["items"].append({"kind": it["kind"], "name": label,
+                                     "status": status, "message": msg, "row": None})
+                job["done"] += 1
+        job["finished"] = True
+        job["running"] = False
+        STATE["inventory"] = None
+        STATE["plan"] = None
+
+    threading.Thread(target=worker, daemon=True).start()
+    return {"started": True, "total": len(todo)}
 
 
 # ======================================================================

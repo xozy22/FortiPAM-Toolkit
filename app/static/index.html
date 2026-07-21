@@ -105,8 +105,13 @@
         <button data-tab="class_tags">Klassifizierungen</button>
       </div>
       <div class="panel">
-        <input type="search" id="invSearch" placeholder="Filtern …" class="search">
+        <div class="form-row" style="justify-content:space-between">
+          <input type="search" id="invSearch" placeholder="Filtern …" class="search" style="margin-bottom:0">
+          <button class="btn ghost danger" id="btnDelete" hidden>Auswahl löschen</button>
+        </div>
+        <div id="invDetail"></div>
         <div class="table-wrap" id="invTable"></div>
+        <div class="console" id="invConsole" hidden></div>
       </div>
     </section>
 
@@ -127,10 +132,10 @@
           <div class="drop" id="dropZone">
             <div class="drop-inner">
               <div class="drop-icon">⬡</div>
-              <p><strong>Excel-Datei hierher ziehen</strong> oder klicken zum Auswählen</p>
-              <p class="dim">.xlsx · erste nicht-leere Zeile = Spaltenüberschriften</p>
+              <p><strong>Excel- oder CSV-Datei hierher ziehen</strong> oder klicken zum Auswählen</p>
+              <p class="dim">.xlsx / .csv · erste nicht-leere Zeile = Spaltenüberschriften</p>
             </div>
-            <input type="file" id="fileInput" accept=".xlsx,.xlsm" hidden>
+            <input type="file" id="fileInput" accept=".xlsx,.xlsm,.csv" hidden>
           </div>
           <div class="btn-row">
             <a class="btn ghost" href="/api/excel/sample">Beispiel-Vorlage herunterladen</a>
@@ -155,6 +160,10 @@
             <label class="inline"><input type="checkbox" id="optAutoFolders"><span>Fehlende Ordner automatisch anlegen</span></label>
             <label class="inline" title="Fragt das Gerät, ob es zu Benutzername + Zieladresse bereits ein Secret gibt (auch unter anderem Namen)">
               <input type="checkbox" id="optDupCheck" checked><span>Geräteprüfung Benutzer+Adresse</span></label>
+            <label class="inline" title="Erzeugt für leere Pflicht-Passwortfelder starke Zufallspasswörter (Klein-/Großbuchstaben, Ziffern, Sonderzeichen)">
+              <input type="checkbox" id="optGenPw"><span>Fehlende Passwörter generieren</span>
+              <input type="text" id="optGenLen" value="20" class="short" style="width:52px" title="Länge (8–64)">
+            </label>
           </div>
         </div>
 
@@ -226,6 +235,17 @@
             <h2>Secret-Felder</h2>
             <div class="map-grid" id="mapSecretBase"></div>
             <div id="mapSecretFields"></div>
+            <h2 style="margin-top:20px">Secret-Optionen <span class="h-dim">für alle importierten Secrets</span></h2>
+            <div class="map-grid">
+              <div class="fname">Checkout</div>
+              <select id="soCheckout" class="so-sel"></select>
+              <div class="fname">Sitzungs-Aufzeichnung</div>
+              <select id="soRecording" class="so-sel"></select>
+              <div class="fname">Password-Changer</div>
+              <select id="soPwChanger" class="so-sel"></select>
+              <div class="fname">Passwort-Heartbeat</div>
+              <select id="soHeartbeat" class="so-sel"></select>
+            </div>
           </div>
         </div>
 

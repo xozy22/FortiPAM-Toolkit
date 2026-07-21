@@ -7,12 +7,31 @@ ungekürzte Fassung bleibt im Server-State und wird bei der Ausführung genutzt.
 from __future__ import annotations
 
 import copy
+import secrets as _rng
+import string
 import threading
 from concurrent.futures import ThreadPoolExecutor
 
 from .fortipam import FortiPAMClient, FortiPAMError
 
 EXECUTE_CONCURRENCY = 6   # parallele Schreibzugriffe (Ordner bleiben seriell)
+
+_PW_CLASSES = (string.ascii_lowercase, string.ascii_uppercase,
+               string.digits, "!#$%+,-.:=?@_")
+
+# Optionale enable/disable-Schalter, die pro Import fest gesetzt werden können
+SECRET_OPTION_FIELDS = ("checkout", "recording", "password-changer",
+                        "password-heartbeat")
+
+
+def generate_password(length: int = 20) -> str:
+    """Starkes Zufallspasswort mit mindestens einem Zeichen je Klasse."""
+    length = max(8, min(64, int(length)))
+    chars = "".join(_PW_CLASSES)
+    while True:
+        pw = "".join(_rng.choice(chars) for _ in range(length))
+        if all(any(c in cls for c in pw) for cls in _PW_CLASSES):
+            return pw
 
 MASK = "••••••"
 SENSITIVE_TYPES = {"password", "passphrase", "private-key"}
@@ -79,6 +98,8 @@ def build_plan(mapping: dict, rows: list[dict], inventory: dict,
     folder_owner = str(opts.get("root_folder_owner") or "").strip()
     dup_enabled = bool(opts.get("dup_check", True)) and dup_checker is not None
     dup_cache: dict[tuple[str, str], object] = {}
+    gen_pw = bool(opts.get("generate_passwords"))
+    gen_len = int(opts.get("password_length") or 20)
 
     templates = {t.get("name", ""): t for t in inventory.get("templates", [])}
     tpl_lookup = {_norm(n): n for n in templates}
@@ -223,6 +244,11 @@ def build_plan(mapping: dict, rows: list[dict], inventory: dict,
                 out.append({"id": pos, "name": fname, "value": val})
                 if f.get("type") == "username" and not username:
                     username = val
+            elif gen_pw and f.get("type") == "password" \
+                    and f.get("mandatory") == "enable":
+                out.append({"id": pos, "name": fname,
+                            "value": generate_password(gen_len)})
+                warnings.append(f"Passwort für Feld '{fname}' wird generiert")
             elif f.get("mandatory") == "enable" and f.get("type") in ("username", "password"):
                 warnings.append(f"Pflichtfeld '{fname}' ist leer")
         return out, username
@@ -302,6 +328,11 @@ def build_plan(mapping: dict, rows: list[dict], inventory: dict,
                 desc = resolve_source(smap.get("description"), row)
                 if desc:
                     body["description"] = desc
+                # feste Secret-Optionen (Checkout, Recording, …) pro Import
+                for opt_field in SECRET_OPTION_FIELDS:
+                    val = (smap.get("options") or {}).get(opt_field)
+                    if val in ("enable", "disable"):
+                        body[opt_field] = val
                 body["field"], username_val = build_fields(secret_tpl, row, warnings)
 
                 action = "create"

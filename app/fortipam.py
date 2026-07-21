@@ -97,29 +97,54 @@ class FortiPAMClient:
         return " — ".join(parts)
 
     # ------------------------------------------------------------------
-    def list_table(self, path: str, fmt: str | None = None) -> tuple[list, dict]:
-        """Liest eine CMDB-Tabelle; gibt (results, envelope) zurück.
+    def list_table(self, path: str, fmt: str | None = None,
+                   page_size: int = 500) -> tuple[list, dict]:
+        """Liest eine CMDB-Tabelle seitenweise; gibt (results, envelope) zurück.
 
         FortiPAM verweigert bei secret/target und secret/template das normale
         Collection-GET ("Unable to get mkey from uri"). Die GUI listet diese
         Tabellen per POST mit X-HTTP-Method-Override: GET und dem Body
-        {"json_filter": []} — das nutzen wir hier als Fallback.
+        {"json_filter": []} — das nutzen wir hier als Fallback (ungepaged,
+        die Route liefert die vollständige Liste).
         """
-        params = {"format": fmt} if fmt else None
+        params = {"format": fmt} if fmt else {}
         try:
-            data = self.request("GET", f"cmdb/{path}", params=params)
+            return self._list_paged(path, params, page_size)
         except FortiPAMError as first_exc:
             if "Unable to get mkey" not in str(first_exc):
                 raise
             try:
-                data = self.request("POST", f"cmdb/{path}", params=params,
+                data = self.request("POST", f"cmdb/{path}", params=params or None,
                                     body={"json_filter": []}, override="GET")
             except FortiPAMError:
                 raise first_exc from None
-        results = data.get("results", [])
-        if not isinstance(results, list):
-            results = [results]
-        return results, data
+            results = data.get("results", [])
+            if not isinstance(results, list):
+                results = [results]
+            return results, data
+
+    def _list_paged(self, path: str, params: dict, page_size: int) -> tuple[list, dict]:
+        """Chunk-weises GET mit start/count (wichtig bei großen Beständen)."""
+        rows: list = []
+        envelope: dict | None = None
+        start = 0
+        while True:
+            page = dict(params)
+            page.update({"start": start, "count": page_size})
+            data = self.request("GET", f"cmdb/{path}", params=page)
+            if envelope is None:
+                envelope = data
+            chunk = data.get("results", [])
+            if not isinstance(chunk, list):
+                chunk = [chunk]
+            rows.extend(chunk)
+            if len(chunk) < page_size:
+                break
+            size = data.get("size")
+            if isinstance(size, int) and len(rows) >= size:
+                break
+            start += page_size
+        return rows, envelope or {}
 
     def get_by_mkey(self, path: str, mkey) -> dict | None:
         """Liest einen einzelnen Tabelleneintrag. None bei 404 (nicht vorhanden).
@@ -141,6 +166,10 @@ class FortiPAMClient:
 
     def create(self, path: str, body: dict) -> dict:
         return self.request("POST", f"cmdb/{path}", body=body)
+
+    def delete(self, path: str, mkey) -> dict:
+        from urllib.parse import quote
+        return self.request("DELETE", f"cmdb/{path}/{quote(str(mkey), safe='')}")
 
     def dup_check(self, username: str, target_addr: str) -> tuple[bool, str]:
         """Geräteseitige Duplikat-Prüfung: existiert bereits ein Secret mit

@@ -63,10 +63,11 @@ LISTING_BLOCKED = {"secret/target", "secret/template"}
 RATE_SEEN: set[str] = set()   # Namen mit Präfix RATE429 liefern beim 1. POST ein 429
 
 
-def envelope(path, results):
+def envelope(path, results, total=None):
+    n = len(results) if total is None else total
     return {"http_method": "GET", "results": results, "status": "success",
             "http_status": 200, "vdom": "root", "path": path,
-            "size": len(results), "matched_count": len(results),
+            "size": n, "matched_count": n,
             "serial": "FPAMMOCK00000001", "version": "v1.9.0", "build": 1751}
 
 
@@ -87,7 +88,15 @@ async def get_table(p1: str, p2: str, request: Request):
     if fmt:
         keep = fmt.split("|")
         rows = [{k: v for k, v in r.items() if k in keep} for r in rows]
-    return envelope(key, rows)
+    total = len(rows)
+    # start/count-Pagination wie am echten Geraet
+    try:
+        start = int(request.query_params.get("start", 0))
+        count = int(request.query_params.get("count", total))
+    except ValueError:
+        start, count = 0, total
+    rows = rows[start:start + max(0, count)]
+    return envelope(key, rows, total=total)
 
 
 def _find(key: str, mkey: str):
@@ -184,6 +193,14 @@ async def post_table(p1: str, p2: str, request: Request):
     if name.startswith("RATE429") and name not in RATE_SEEN:
         RATE_SEEN.add(name)
         return err(429, "Too many requests")
+
+    # Wie am echten Geraet: gespeicherte Secret-Felder tragen den Feldtyp
+    if key == "secret/database":
+        tpl = next((t for t in DB["secret/template"]
+                    if t.get("name") == body.get("template")), None)
+        types = {f.get("name"): f.get("type") for f in (tpl or {}).get("field", [])}
+        for f in body.get("field", []) or []:
+            f.setdefault("type", types.get(f.get("name"), "text"))
 
     mkey = body.get("name")
     if key in NEXT_ID:
