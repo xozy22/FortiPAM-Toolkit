@@ -1,0 +1,27 @@
+<svg width="720" height="160" viewBox="0 0 720 160" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="FortiPAM Toolkit">
+  <!-- Hintergrund im Stil der App-Oberfläche -->
+  <rect width="720" height="160" rx="10" fill="#101315"/>
+  <rect x="0.5" y="0.5" width="719" height="159" rx="9.5" fill="none" stroke="#2a3136"/>
+  <!-- Ecken-Akzent wie die Panels der App -->
+  <path d="M 14 30 L 14 14 L 30 14" fill="none" stroke="#ff6a2b" stroke-width="3"/>
+  <path d="M 706 130 L 706 146 L 690 146" fill="none" stroke="#ff6a2b" stroke-width="3"/>
+
+  <!-- Bildmarke: geschichtete Balken im geclippten Quadrat -->
+  <g transform="translate(44,38)">
+    <polygon points="0,0 84,0 84,64 64,84 0,84" fill="#1d2226" stroke="#2a3136" stroke-width="1.5"/>
+    <rect x="15" y="15" width="54" height="16" fill="#ff6a2b"/>
+    <rect x="15" y="37" width="38" height="9"  fill="#d6dbdd"/>
+    <rect x="15" y="52" width="54" height="16" fill="#2a3136"/>
+    <circle cx="61" cy="41.5" r="4" fill="#4cc38a"/>
+  </g>
+
+  <!-- Wortmarke -->
+  <text x="164" y="82" font-family="Bahnschrift, 'Segoe UI', 'Arial Narrow', Arial, sans-serif"
+        font-size="40" font-weight="700" letter-spacing="7" fill="#d6dbdd">FORTIPAM<tspan fill="#ff6a2b" dx="14">// TOOLKIT</tspan></text>
+
+  <!-- Unterzeile -->
+  <text x="166" y="116" font-family="Consolas, 'Cascadia Mono', monospace"
+        font-size="15" letter-spacing="1" fill="#8a9499">Bulk-Import &amp; Verwaltung von Targets und Secrets — lokal, offline-fähig</text>
+  <text x="166" y="138" font-family="Consolas, 'Cascadia Mono', monospace"
+        font-size="12" letter-spacing="1" fill="#5a646a">inoffizielles Community-Tool · nicht mit Fortinet Inc. verbunden</text>
+</svg>
