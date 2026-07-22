@@ -256,6 +256,14 @@ th.sortable:hover { color: var(--txt); }
 th .sort-arrow { color: var(--accent); margin-left: 5px; }
 .cellf { border-bottom: 1px dotted var(--dim); cursor: pointer; }
 .cellf:hover { color: var(--accent); border-bottom-color: var(--accent); }
+
+/* Ordner-Baum */
+.tree-toggle {
+  display: inline-block; width: 20px; text-align: center;
+  cursor: pointer; color: var(--accent); user-select: none;
+}
+.tree-toggle:hover { color: #ff824d; }
+.tree-toggle-spacer { display: inline-block; width: 20px; }
 .table-wrap { overflow-x: auto; max-height: 520px; overflow-y: auto; }
 table { border-collapse: collapse; width: 100%; font-family: var(--font-mono); font-size: 12.5px; }
 th {

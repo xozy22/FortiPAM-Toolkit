@@ -26,7 +26,8 @@ def run() -> None:
     port = int(os.environ.get("FPT_PORT") or _free_port())
     url = f"http://127.0.0.1:{port}"
     print(f"\n  FortiPAM Toolkit läuft auf {url}  (Beenden mit Strg+C)\n")
-    threading.Timer(1.0, lambda: webbrowser.open(url)).start()
+    if not os.environ.get("FPT_NO_BROWSER"):
+        threading.Timer(1.0, lambda: webbrowser.open(url)).start()
     uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning")
 
 

@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Abhängigkeiten installieren
+        run: pip install -r requirements.txt pytest
+
+      - name: Unit-Tests (Planner)
+        run: pytest dev/test_planner.py -q
+
+      - name: E2E-Suite gegen Mock-FortiPAM
+        shell: pwsh
+        run: |
+          $env:FPT_PORT = "8420"
+          $env:FPT_NO_BROWSER = "1"
+          Start-Process python -ArgumentList "dev/mock_fortipam.py" -WindowStyle Hidden
+          Start-Process python -ArgumentList "-m","app" -WindowStyle Hidden
+          $ok = $false
+          foreach ($i in 1..30) {
+            try {
+              Invoke-WebRequest -UseBasicParsing "http://127.0.0.1:8420/" -TimeoutSec 2 | Out-Null
+              Invoke-WebRequest -UseBasicParsing "http://127.0.0.1:9443/api/v2/cmdb/secret/folder" -TimeoutSec 2 | Out-Null
+              $ok = $true; break
+            } catch { Start-Sleep 1 }
+          }
+          if (-not $ok) { throw "Server wurden nicht rechtzeitig erreichbar." }
+          python dev/e2e_test.py

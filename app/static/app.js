@@ -424,10 +424,59 @@ function applyInvFilters(data, cols) {
   return rows;
 }
 
+/* Ordner-Hierarchie als flache, eingerückte Liste (mit Auf-/Zuklappen) */
+function buildFolderTree() {
+  const folders = S.inventory.folders || [];
+  const secrets = S.inventory.secrets || [];
+  const direct = new Map();
+  for (const s of secrets) {
+    const fid = +s.folder || 0;
+    direct.set(fid, (direct.get(fid) || 0) + 1);
+  }
+  const byId = new Map(folders.map((f) => [+f.id, f]));
+  const children = new Map();
+  const roots = [];
+  for (const f of folders) {
+    const pid = +f["parent-folder"] || 0;
+    if (pid && byId.has(pid)) {
+      if (!children.has(pid)) children.set(pid, []);
+      children.get(pid).push(f);
+    } else {
+      roots.push(f);   // Root-Ebene oder Elternordner nicht sichtbar
+    }
+  }
+  const byName = (a, b) => String(a.name).localeCompare(String(b.name), "de");
+  roots.sort(byName);
+  children.forEach((arr) => arr.sort(byName));
+  const total = new Map();
+  const calcTotal = (f) => {
+    let n = direct.get(+f.id) || 0;
+    for (const c of children.get(+f.id) || []) n += calcTotal(c);
+    total.set(+f.id, n);
+    return n;
+  };
+  roots.forEach(calcTotal);
+  S.folderCollapsed = S.folderCollapsed || new Set();
+  const rows = [];
+  const walk = (f, depth) => {
+    const id = +f.id;
+    const kids = children.get(id) || [];
+    rows.push({ ...f, _depth: depth, _kids: kids.length,
+                _direct: direct.get(id) || 0, _total: total.get(id) || 0,
+                _collapsed: S.folderCollapsed.has(id) });
+    if (!S.folderCollapsed.has(id)) kids.forEach((k) => walk(k, depth + 1));
+  };
+  roots.forEach((r) => walk(r, 0));
+  return rows;
+}
+
 function renderInvTable() {
   const cols = INV_COLS[S.invTab];
   const data = S.inventory[S.invTab] || [];
   let rows = applyInvFilters(data, cols);
+  // Baumansicht für Ordner, solange weder Filter noch Sortierung aktiv sind
+  const treeMode = S.invTab === "folders" && !(S.invChips || []).length
+    && !$("invSearch").value.trim() && !S.invSort;
 
   if (S.invSort) {
     const { key, dir } = S.invSort;
@@ -467,7 +516,36 @@ function renderInvTable() {
 
   const sel = SELECTABLE[S.invTab];
   const filterKeys = new Set(FILTER_COLS[S.invTab] || []);
-  if (!rows.length) {
+  if (treeMode && data.length) {
+    rows = buildFolderTree();
+    S.invRows = rows;
+    $("invCount").textContent = String(data.length);
+    const head = `<th class="sel-col"><input type="checkbox" id="selAll" title="alle auswählen"></th>` +
+      `<th>Ordner</th><th>ID</th><th>Secrets</th><th title="inklusive Unterordner">Gesamt</th>`;
+    const body = rows.map((r, i) => {
+      const toggle = r._kids
+        ? `<span class="tree-toggle" data-id="${r.id}" title="${r._collapsed ? "aufklappen" : "zuklappen"}">${r._collapsed ? "▸" : "▾"}</span>`
+        : `<span class="tree-toggle-spacer"></span>`;
+      const hidden = r._collapsed && r._kids
+        ? ` <span class="dim">(+${r._kids} Unterordner)</span>` : "";
+      return `<tr class="clickable" data-idx="${i}">` +
+        `<td class="sel-col"><input type="checkbox" class="sel-row" data-idx="${i}"></td>` +
+        `<td><span style="display:inline-block;width:${r._depth * 20}px"></span>${toggle}` +
+        `${esc(r.name)}${hidden}</td>` +
+        `<td>${r.id}</td><td>${r._direct || ""}</td>` +
+        `<td>${r._total !== r._direct ? r._total : (r._direct || "")}</td></tr>`;
+    }).join("");
+    $("invTable").innerHTML = note +
+      `<table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
+    $("invTable").querySelectorAll(".tree-toggle[data-id]").forEach((t) =>
+      t.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const id = +t.dataset.id;
+        if (S.folderCollapsed.has(id)) S.folderCollapsed.delete(id);
+        else S.folderCollapsed.add(id);
+        renderInvTable();
+      }));
+  } else if (!rows.length) {
     $("invTable").innerHTML = note + `<p class="empty-note">Keine Einträge.</p>`;
   } else {
     const head = (sel ? `<th class="sel-col"><input type="checkbox" id="selAll" title="alle (gefilterten) auswählen"></th>` : "") +
@@ -549,7 +627,7 @@ async function openDetail(idx) {
     } catch (e) { toast(e.message, "err"); return; }
   }
   const entries = Object.entries(obj)
-    .filter(([k, v]) => !k.startsWith("q_") && k !== "_fields" && v !== "" && v != null
+    .filter(([k, v]) => !k.startsWith("q_") && !k.startsWith("_") && v !== "" && v != null
       && !(Array.isArray(v) && v.length === 0))
     .map(([k, v]) => {
       const val = (typeof v === "object") ? JSON.stringify(v, null, 1) : String(v);

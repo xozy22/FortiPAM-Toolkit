@@ -1,0 +1,58 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Abhängigkeiten installieren
+        run: pip install -r requirements.txt pyinstaller
+
+      - name: EXE bauen
+        run: >
+          pyinstaller --onefile --name FortiPAM-Toolkit
+          --add-data "app/static;app/static"
+          --hidden-import uvicorn.logging --hidden-import uvicorn.loops.auto
+          --hidden-import uvicorn.protocols.http.auto --hidden-import uvicorn.lifespan.on
+          run.py
+
+      - name: Smoke-Test der EXE
+        shell: pwsh
+        run: |
+          $env:FPT_PORT = "8421"
+          $env:FPT_NO_BROWSER = "1"
+          Start-Process ".\dist\FortiPAM-Toolkit.exe" -WindowStyle Hidden
+          $ok = $false
+          foreach ($i in 1..30) {
+            try {
+              $r = Invoke-WebRequest -UseBasicParsing "http://127.0.0.1:8421/" -TimeoutSec 2
+              if ($r.Content -match "FortiPAM Toolkit") { $ok = $true; break }
+            } catch { Start-Sleep 1 }
+          }
+          if (-not $ok) { throw "EXE-Smoke-Test fehlgeschlagen." }
+
+      - name: GitHub-Release erstellen
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/FortiPAM-Toolkit.exe
+          generate_release_notes: true
+          body: |
+            Portable Windows-EXE (~15 MB, kein Python nötig). Start per Doppelklick,
+            die Oberfläche öffnet sich im Browser.
+
+            **Hinweis:** Die EXE ist unsigniert — SmartScreen beim ersten Start mit
+            „Weitere Informationen → Trotzdem ausführen" bestätigen.
+
+            *Inoffizielles Community-Tool, nicht mit Fortinet Inc. verbunden.*

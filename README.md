@@ -3,12 +3,15 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/xozy22/FortiPAM-Toolkit/actions/workflows/ci.yml"><img src="https://github.com/xozy22/FortiPAM-Toolkit/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/Lizenz-MIT-2ea44f" alt="Lizenz: MIT"></a>
   <img src="https://img.shields.io/badge/Plattform-Windows-0078d4" alt="Plattform: Windows">
   <img src="https://img.shields.io/badge/Python-3.11%2B-3776ab" alt="Python 3.11+">
   <img src="https://img.shields.io/badge/FortiPAM-v1.9.x_getestet-ff6a2b" alt="FortiPAM v1.9.x getestet">
   <img src="https://img.shields.io/badge/Daten-100%25_lokal-1d2226" alt="100% lokal">
 </p>
+
+<p align="center"><b>Deutsch</b> · <a href="README.en.md">English</a></p>
 
 > **Disclaimer:** Dies ist ein **inoffizielles Community-Tool** und steht in
 > keiner Verbindung zu Fortinet Inc. Es ist kein offizielles Fortinet-Produkt,
@@ -31,8 +34,10 @@ Live-Gerät).
 ## Funktionen
 
 ### Inventar
-- Vollständiger Bestand: Targets, Secrets, Ordner (mit Pfaden), Templates,
+- Vollständiger Bestand: Targets, Secrets, Ordner, Templates,
   Klassifizierungen — seitenweise geladen, auch bei großen Beständen stabil
+- **Ordner als auf-/zuklappbarer Baum** mit Secret-Zählern je Ordner
+  (direkt + inklusive Unterordner)
 - **Filtern per Klick**: Werte in der Tabelle (Ordner, Template, Target, …)
   anklicken oder im **„+ Filter"-Menü** wählen (alle Werte mit Trefferzahlen,
   Mehrfachauswahl per Haken) — jeder Filter wird als **Chip** angezeigt und
@@ -107,6 +112,10 @@ Live-Gerät).
    automatisch (Port 8420)
 
 **Variante B — portable EXE:**
+
+Fertige EXE von der [Releases-Seite](https://github.com/xozy22/FortiPAM-Toolkit/releases)
+herunterladen (wird bei jedem Release automatisch gebaut und smoke-getestet) —
+oder selbst bauen:
 
 ```
 build_exe.bat
@@ -238,13 +247,19 @@ alle im Toolkit berücksichtigt:
 `dev\mock_fortipam.py` simuliert die FortiPAM-API auf `http://127.0.0.1:9443`
 inklusive aller oben beschriebenen Eigenheiten (gesperrtes Listing,
 Override-Route, Root-Regeln, Rate-Limits, Duplikat-Prüfung).
-`dev\e2e_test.py` fährt den kompletten Ablauf mit **64 Checks** ab:
+`dev\e2e_test.py` fährt den kompletten Ablauf mit **70 Checks** ab,
+`dev\test_planner.py` enthält Unit-Tests für die Plan-Logik:
 
 ```
-.venv\Scripts\python.exe dev\mock_fortipam.py     (Terminal 1)
-start.bat                                          (Terminal 2)
-.venv\Scripts\python.exe dev\e2e_test.py          (Terminal 3)
+.venv\Scripts\python.exe -m pytest dev\test_planner.py    (Unit-Tests)
+.venv\Scripts\python.exe dev\mock_fortipam.py             (Terminal 1)
+start.bat                                                  (Terminal 2)
+.venv\Scripts\python.exe dev\e2e_test.py                  (Terminal 3)
 ```
+
+Beide Suiten laufen per **GitHub Actions** bei jedem Push (Windows-Runner,
+siehe CI-Badge). Ein Git-Tag `v*` baut automatisch die EXE, testet sie und
+veröffentlicht sie als GitHub-Release.
 
 **Technik:** FastAPI + httpx (Backend), Vanilla JS ohne Build-Schritt
 (Frontend), openpyxl (Excel). Die CMDB-Schema-Referenz ist nicht Teil des
