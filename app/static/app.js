@@ -43,7 +43,7 @@ document.querySelectorAll("#langSwitch button").forEach((b) =>
 
 const LOG = [];
 function addLog(level, msg) {
-  const ts = new Date().toLocaleTimeString("de-DE");
+  const ts = new Date().toLocaleTimeString("en-GB");
   LOG.push({ ts, level, msg });
   const box = $("sessionLog");
   const line = document.createElement("div");
@@ -168,7 +168,7 @@ $("btnProfDelete").addEventListener("click", async () => {
   if (!confirm(`Verbindung '${p.name}' löschen?\n\nDer gespeicherte Token wird dabei entfernt.`)) return;
   try {
     await api(`/api/connections/${encodeURIComponent(p.name)}`, { method: "DELETE" });
-    addLog("info", `Verbindung '${p.name}' gelöscht.`);
+    addLog("info", `Connection '${p.name}' deleted.`);
     toast(`'${p.name}' gelöscht.`, "ok");
     await loadConnections("");
   } catch (e) {
@@ -206,13 +206,13 @@ $("btnConnect").addEventListener("click", async () => {
         <span class="k">Seriennummer</span><span class="v">${esc(info.serial || "—")}</span>
         ${info.vdom ? `<span class="k">VDOM</span><span class="v">${esc(info.vdom)}</span>` : ""}
       </div>`;
-    addLog("ok", `Verbunden mit ${info.base_url} (${info.version})`);
+    addLog("ok", `Connected to ${info.base_url} (${info.version})`);
     toast(t("Verbindung hergestellt."), "ok");
     await loadInventory(true);
     showView("inventar");
   } catch (e) {
     $("connResult").innerHTML = `<div class="notice error">${esc(e.message)}</div>`;
-    addLog("err", "Verbindung fehlgeschlagen: " + e.message);
+    addLog("err", "Connection failed: " + e.message);
   } finally {
     btn.disabled = false; btn.textContent = "Verbinden";
   }
@@ -223,7 +223,7 @@ $("btnDisconnect").addEventListener("click", async () => {
   setConnected(false);
   S.inventory = null;
   $("connResult").innerHTML = "";
-  addLog("info", "Verbindung getrennt.");
+  addLog("info", "Disconnected.");
   showView("verbindung");
 });
 
@@ -267,12 +267,12 @@ async function loadInventory(refresh = false) {
     renderInvTable();
     $("tplGenSel").innerHTML = inv.templates.map((t) =>
       `<option>${esc(t.name)}</option>`).join("");
-    addLog("info", `Inventar geladen: ${inv.targets.length} Targets, ${inv.secrets.length} Secrets, ` +
-      `${inv.folders.length} Ordner, ${inv.templates.length} Templates`);
+    addLog("info", `Inventory loaded: ${inv.targets.length} targets, ${inv.secrets.length} secrets, ` +
+      `${inv.folders.length} folders, ${inv.templates.length} templates`);
     if (S.upload) buildMappingUI();
   } catch (e) {
     toast(e.message, "err");
-    addLog("err", "Inventar: " + e.message);
+    addLog("err", "Inventory: " + e.message);
   }
 }
 
@@ -687,7 +687,7 @@ $("btnDelete").addEventListener("click", async () => {
                t("Dies kann nicht rückgängig gemacht werden."))) return;
   try {
     await api("/api/delete", { method: "POST", body: { items } });
-    addLog("warn", `Löschvorgang gestartet: ${items.length} Objekt(e).`);
+    addLog("warn", `Delete started: ${items.length} object(s).`);
     pollDelete();
   } catch (e) {
     toast(e.message, "err");
@@ -708,7 +708,7 @@ function pollDelete() {
         line.className = it.status === "ok" ? "cl-ok" : "cl-err";
         line.textContent = `${it.status === "ok" ? "✔" : "✘"} ${it.kind} ${it.name} — ${it.message}`;
         box.appendChild(line);
-        addLog(it.status === "ok" ? "ok" : "err", `Löschen ${it.kind} ${it.name}: ${it.message}`);
+        addLog(it.status === "ok" ? "ok" : "err", `Delete ${it.kind} ${it.name}: ${it.message}`);
       }
       box.scrollTop = box.scrollHeight;
       if (j.finished) {
@@ -806,13 +806,13 @@ async function uploadFile(file) {
     const up = await api("/api/excel/upload", { method: "POST", body: fd });
     S.upload = up;
     S.plan = null;
-    addLog("ok", `Excel geladen: ${up.filename} · Blatt '${up.sheet}' · ${up.row_count} Zeilen`);
+    addLog("ok", `File loaded: ${up.filename} · sheet '${up.sheet}' · ${up.row_count} rows`);
     renderUploadInfo();
     buildMappingUI();
     enableStep(2); enableStep(3, false); enableStep(4, false);
   } catch (e) {
     toast(e.message, "err");
-    addLog("err", "Excel: " + e.message);
+    addLog("err", "File: " + e.message);
   }
 }
 
@@ -949,11 +949,11 @@ function buildMappingUI() {
       }
       addTemplateOption(tpl.name);
       $("tplAddName").value = "";
-      addLog("ok", `Template '${tpl.name}' geladen.`);
+      addLog("ok", `Template '${tpl.name}' loaded.`);
       toast(`Template '${tpl.name}' verfügbar.`, "ok");
     } catch (e) {
       toast(e.message, "err");
-      addLog("err", "Template laden: " + e.message);
+      addLog("err", "Load template: " + e.message);
     }
   };
 
@@ -1134,7 +1134,7 @@ $("btnTplGen").addEventListener("click", async () => {
       throw new Error(data.detail || `HTTP ${resp.status}`);
     }
     downloadBlob(await resp.blob(), "FortiPAM_Import_Vorlage_Templates.xlsx");
-    addLog("ok", `Vorlage für ${chosen.length} Template(s) erzeugt.`);
+    addLog("ok", `Template generated for ${chosen.length} template(s).`);
   } catch (e) {
     toast(e.message, "err");
   }
@@ -1148,7 +1148,7 @@ $("btnProfileSave").addEventListener("click", () => {
   downloadBlob(new Blob([JSON.stringify(profile, null, 2)],
                         { type: "application/json" }),
                "fortipam-mapping-profil.json");
-  addLog("ok", "Mapping-Profil gespeichert.");
+  addLog("ok", "Mapping profile saved.");
 });
 
 $("btnProfileLoad").addEventListener("click", () => $("profileFile").click());
@@ -1162,11 +1162,11 @@ $("profileFile").addEventListener("change", (e) => {
       const data = JSON.parse(reader.result);
       const mapping = data.mapping || data;
       const warnings = applyMapping(mapping);
-      addLog("ok", `Mapping-Profil '${file.name}' geladen.`);
+      addLog("ok", `Mapping profile '${file.name}' loaded.`);
       toast(warnings.length
         ? `Profil geladen – ${warnings.length} Hinweis(e), siehe Protokoll.`
         : "Profil geladen.", warnings.length ? "err" : "ok");
-      warnings.forEach((w) => addLog("warn", "Profil: " + w));
+      warnings.forEach((w) => addLog("warn", "Profile: " + w));
     } catch (err) {
       toast("Profil konnte nicht gelesen werden: " + err.message, "err");
     }
@@ -1378,8 +1378,8 @@ $("btnPlan").addEventListener("click", async () => {
     S.plan = plan;
     renderPlan();
     enableStep(3); gotoStep(3);
-    addLog("info", `Plan berechnet: ${plan.summary.targets_create} Targets, ` +
-      `${plan.summary.secrets_create} Secrets, ${plan.summary.folders_create} Ordner neu`);
+    addLog("info", `Plan computed: ${plan.summary.targets_create} targets, ` +
+      `${plan.summary.secrets_create} secrets, ${plan.summary.folders_create} folders new`);
   } catch (e) {
     toast(e.message, "err");
     addLog("err", "Plan: " + e.message);
@@ -1466,7 +1466,7 @@ $("btnExecute").addEventListener("click", async () => {
     $("btnExecDone").hidden = true;
     $("btnCancel").hidden = false;
     $("execTitle").textContent = t("Ausführung läuft …");
-    addLog("info", "Bulk-Erstellung gestartet.");
+    addLog("info", "Bulk creation started.");
     pollExecution();
   } catch (e) {
     toast(e.message, "err");
@@ -1475,7 +1475,7 @@ $("btnExecute").addEventListener("click", async () => {
 
 $("btnCancel").addEventListener("click", async () => {
   await api("/api/execute/cancel", { method: "POST" });
-  addLog("warn", "Abbruch angefordert.");
+  addLog("warn", "Cancellation requested.");
 });
 
 let renderedItems = 0;
@@ -1489,7 +1489,10 @@ function pollExecution() {
       $("execBar").style.width = pct + "%";
       $("execCount").textContent = `${j.done} / ${j.total}`;
       const box = $("execLog");
+      // sichtbare Ausführungsansicht folgt der UI-Sprache …
       const KIND = { folder: t("Ordner"), target: "Target", secret: "Secret", system: "System" };
+      // … das Protokoll ist immer englisch
+      const LOG_KIND = { folder: "Folder", target: "Target", secret: "Secret", system: "System" };
       for (; renderedItems < j.items.length; renderedItems++) {
         const it = j.items[renderedItems];
         const line = document.createElement("div");
@@ -1499,7 +1502,7 @@ function pollExecution() {
           (it.row ? ` (${t("Zeile")} ${it.row})` : "") + (it.message ? ` — ${it.message}` : "");
         box.appendChild(line);
         addLog(it.status === "error" ? "err" : "ok",
-          `${KIND[it.kind] || it.kind} ${it.name}: ${it.message || it.status}`);
+          `${LOG_KIND[it.kind] || it.kind} ${it.name}: ${it.message || it.status}`);
       }
       box.scrollTop = box.scrollHeight;
       if (j.finished) {
@@ -1511,7 +1514,7 @@ function pollExecution() {
         $("btnCancel").hidden = true;
         $("btnExecDone").hidden = false;
         addLog(errors ? "warn" : "ok",
-          `Bulk-Erstellung beendet: ${j.done} Aktionen, ${errors} Fehler.`);
+          `Bulk creation finished: ${j.done} actions, ${errors} errors.`);
         toast(errors ? t("Fertig mit {n} Fehlern.", { n: errors }) : t("Alle Objekte erstellt."),
               errors ? "err" : "ok");
         return;
@@ -1555,7 +1558,7 @@ function buildSoSelects() {
   });
 }
 
-addLog("info", "FortiPAM Toolkit gestartet.");
+addLog("info", "FortiPAM Toolkit started.");
 buildSoSelects();
 (async () => {
   let saved = "de";
