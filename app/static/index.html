@@ -16,9 +16,15 @@
       <span class="brand-name">FORTIPAM</span><span class="brand-sub">// TOOLKIT</span>
     </div>
   </div>
-  <div class="conn-badge" id="connBadge">
-    <span class="led" id="connLed"></span>
-    <span id="connText">Nicht verbunden</span>
+  <div class="topbar-right">
+    <div class="lang-switch" id="langSwitch">
+      <button data-lang="de" class="active">DE</button>
+      <button data-lang="en">EN</button>
+    </div>
+    <div class="conn-badge" id="connBadge">
+      <span class="led" id="connLed"></span>
+      <span id="connText" data-i18n="conn.none">Nicht verbunden</span>
+    </div>
   </div>
 </header>
 
@@ -334,6 +340,7 @@
 </div>
 
 <div class="toasts" id="toasts"></div>
+<script src="/static/i18n.js"></script>
 <script src="/static/app.js"></script>
 </body>
 </html>

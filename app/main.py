@@ -15,8 +15,9 @@ from fastapi import Body, FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import excel_io, planner, winsec
+from . import excel_io, i18n, planner, winsec
 from .fortipam import FortiPAMClient, FortiPAMError
+from .i18n import tr
 
 app = FastAPI(title="FortiPAM Toolkit", docs_url=None, redoc_url=None)
 
@@ -37,8 +38,14 @@ JOB_LOCK = threading.Lock()
 def _require(key: str, message: str):
     val = STATE.get(key)
     if val is None:
-        raise HTTPException(status_code=409, detail=message)
+        raise HTTPException(status_code=409, detail=tr(message))
     return val
+
+
+@app.post("/api/lang")
+def set_language(payload: dict = Body(...)):
+    """Sprache für servergenerierte Texte (Plan-Warnungen, Fehler, Jobs)."""
+    return {"lang": i18n.set_lang(str(payload.get("lang") or "de"))}
 
 
 # ======================================================================
@@ -127,7 +134,8 @@ def connections_delete(name: str):
     store = _load_store()
     prof = _find_profile(store, name)
     if prof is None:
-        raise HTTPException(status_code=404, detail=f"Verbindung '{name}' nicht gefunden.")
+        raise HTTPException(status_code=404,
+                            detail=tr("Verbindung '{name}' nicht gefunden.", name=name))
     store["profiles"].remove(prof)
     if store.get("last_used", "").strip().lower() == str(name).strip().lower():
         store["last_used"] = ""
@@ -150,11 +158,13 @@ def connect(payload: dict = Body(...)):
         prof = _find_profile(_load_store(), profile_name)
         token = _decrypt_token((prof or {}).get("token_enc"))
         if not token:
-            raise HTTPException(status_code=400, detail=(
-                f"Für '{profile_name}' ist kein Token gespeichert oder die "
-                f"Entschlüsselung schlug fehl — bitte Token eingeben."))
+            raise HTTPException(status_code=400, detail=tr(
+                "Für '{name}' ist kein Token gespeichert oder die "
+                "Entschlüsselung schlug fehl — bitte Token eingeben.",
+                name=profile_name))
     if not base_url or not token:
-        raise HTTPException(status_code=400, detail="Basis-URL und API-Token sind erforderlich.")
+        raise HTTPException(status_code=400,
+                            detail=tr("Basis-URL und API-Token sind erforderlich."))
     if not base_url.lower().startswith(("http://", "https://")):
         base_url = "https://" + base_url
 
@@ -343,11 +353,12 @@ def inventory(refresh: int = 0):
 async def excel_upload(file: UploadFile = File(...)):
     data = await file.read()
     if not data:
-        raise HTTPException(status_code=400, detail="Leere Datei.")
+        raise HTTPException(status_code=400, detail=tr("Leere Datei."))
     try:
         parsed = excel_io.parse_any(data, file.filename or "")
     except Exception as exc:
-        raise HTTPException(status_code=400, detail=f"Datei konnte nicht gelesen werden: {exc}")
+        raise HTTPException(status_code=400,
+                            detail=tr("Datei konnte nicht gelesen werden: {exc}", exc=exc))
     parsed["filename"] = file.filename
     STATE["excel_bytes"] = data
     STATE["excel"] = parsed
@@ -363,7 +374,8 @@ def excel_sheet(payload: dict = Body(...)):
         parsed = excel_io.parse_any(data, old.get("filename", ""),
                                     sheet_name=payload.get("sheet"))
     except Exception as exc:
-        raise HTTPException(status_code=400, detail=f"Blatt konnte nicht gelesen werden: {exc}")
+        raise HTTPException(status_code=400,
+                            detail=tr("Blatt konnte nicht gelesen werden: {exc}", exc=exc))
     parsed["filename"] = old.get("filename", "")
     STATE["excel"] = parsed
     STATE["plan"] = None
@@ -409,7 +421,7 @@ def excel_template_generate(payload: dict = Body(...)):
     by_name = {t.get("name"): t for t in inv.get("templates", [])}
     templates = [by_name[n] for n in wanted if n in by_name]
     if not templates:
-        raise HTTPException(status_code=400, detail="Keine gültigen Templates gewählt.")
+        raise HTTPException(status_code=400, detail=tr("Keine gültigen Templates gewählt."))
     data = excel_io.template_workbook(templates)
     return _xlsx_response(data, "FortiPAM_Import_Vorlage_Templates.xlsx")
 
@@ -441,14 +453,14 @@ _OBJECT_PATHS = {
 def object_detail(kind: str, mkey: str):
     client = _require("client", "Nicht mit FortiPAM verbunden.")
     if kind not in _OBJECT_PATHS:
-        raise HTTPException(status_code=400, detail="Unbekannter Objekttyp.")
+        raise HTTPException(status_code=400, detail=tr("Unbekannter Objekttyp."))
     path, mask_fields = _OBJECT_PATHS[kind]
     try:
         obj = client.get_by_mkey(path, mkey)
     except FortiPAMError as exc:
         raise HTTPException(status_code=502, detail=str(exc))
     if obj is None:
-        raise HTTPException(status_code=404, detail="Objekt nicht gefunden.")
+        raise HTTPException(status_code=404, detail=tr("Objekt nicht gefunden."))
     obj = copy.deepcopy(obj)
     obj.pop("q_origin_key", None)
     if mask_fields:
@@ -474,15 +486,16 @@ def bulk_delete(payload: dict = Body(...)):
     client = _require("client", "Nicht mit FortiPAM verbunden.")
     items = payload.get("items") or []
     if not isinstance(items, list) or not items:
-        raise HTTPException(status_code=400, detail="Keine Objekte ausgewählt.")
+        raise HTTPException(status_code=400, detail=tr("Keine Objekte ausgewählt."))
     for it in items:
         if it.get("kind") not in ("secret", "target", "folder"):
             raise HTTPException(status_code=400,
-                                detail=f"Objekttyp '{it.get('kind')}' nicht löschbar.")
+                                detail=tr("Objekttyp '{kind}' nicht löschbar.",
+                                          kind=it.get("kind")))
     with JOB_LOCK:
         job = STATE.get("job")
         if job and job.get("running"):
-            raise HTTPException(status_code=409, detail="Es läuft bereits ein Vorgang.")
+            raise HTTPException(status_code=409, detail=tr("Es läuft bereits ein Vorgang."))
         job = {"running": True, "finished": False, "cancel": False,
                "done": 0, "total": len(items), "items": [],
                "started": time.strftime("%H:%M:%S")}
@@ -502,7 +515,7 @@ def bulk_delete(payload: dict = Body(...)):
             label = str(it.get("label") or it.get("mkey"))
             try:
                 client.delete(path, it.get("mkey"))
-                status, msg = "ok", "gelöscht"
+                status, msg = "ok", tr("gelöscht")
             except FortiPAMError as exc:
                 status, msg = "error", str(exc)
             with JOB_LOCK:
@@ -559,17 +572,18 @@ def template_add(payload: dict = Body(...)):
     client = _require("client", "Nicht mit FortiPAM verbunden.")
     name = str(payload.get("name") or "").strip()
     if not name:
-        raise HTTPException(status_code=400, detail="Template-Name fehlt.")
+        raise HTTPException(status_code=400, detail=tr("Template-Name fehlt."))
     try:
         tpl = client.get_by_mkey("secret/template", name)
     except FortiPAMError as exc:
         if "HTTP 403" in str(exc):
-            raise HTTPException(status_code=403, detail=(
-                f"Kein Zugriff auf Template '{name}' – der API-User braucht "
-                f"'create secret'-Berechtigung für dieses Template."))
+            raise HTTPException(status_code=403, detail=tr(
+                "Kein Zugriff auf Template '{name}' – der API-User braucht "
+                "'create secret'-Berechtigung für dieses Template.", name=name))
         raise HTTPException(status_code=502, detail=str(exc))
     if tpl is None:
-        raise HTTPException(status_code=404, detail=f"Template '{name}' wurde nicht gefunden.")
+        raise HTTPException(status_code=404,
+                            detail=tr("Template '{name}' wurde nicht gefunden.", name=name))
     STATE["extra_templates"].add(tpl.get("name", name))
     inv = STATE.get("inventory")
     if inv is not None:
@@ -586,7 +600,7 @@ def execute():
     with JOB_LOCK:
         job = STATE.get("job")
         if job and job.get("running"):
-            raise HTTPException(status_code=409, detail="Es läuft bereits eine Ausführung.")
+            raise HTTPException(status_code=409, detail=tr("Es läuft bereits eine Ausführung."))
         job = {"running": True, "finished": False, "cancel": False,
                "done": 0, "total": 0, "items": [], "started": time.strftime("%H:%M:%S")}
         STATE["job"] = job
@@ -595,7 +609,7 @@ def execute():
         try:
             planner.execute_plan(client, plan, job, lock=JOB_LOCK)
         except Exception as exc:  # unerwartete Fehler sichtbar machen
-            job["items"].append({"kind": "system", "name": "Ausführung",
+            job["items"].append({"kind": "system", "name": tr("Ausführung"),
                                  "status": "error", "message": str(exc), "row": None})
             job["finished"] = True
             job["running"] = False

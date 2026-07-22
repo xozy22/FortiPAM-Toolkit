@@ -14,6 +14,31 @@ const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g,
   (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 
+/* Nach dynamischem Rendern statische Treffer nachübersetzen (nur bei EN). */
+function retranslate() {
+  if (I18N.lang === "en") translateDom(document.body);
+}
+
+async function applyLang(lang) {
+  I18N.lang = (lang === "en") ? "en" : "de";
+  try { localStorage.setItem("fpt_lang", I18N.lang); } catch (e) { /* egal */ }
+  document.documentElement.lang = I18N.lang;
+  document.querySelectorAll("#langSwitch button").forEach((b) =>
+    b.classList.toggle("active", b.dataset.lang === I18N.lang));
+  try { await api("/api/lang", { method: "POST", body: { lang: I18N.lang } }); }
+  catch (e) { /* Server evtl. noch nicht bereit */ }
+  // dynamische Ansichten neu aufbauen, damit deren Texte durch t()/Sweep laufen
+  if (typeof buildSoSelects === "function") buildSoSelects();
+  if (S.inventory) { renderInvTiles(); renderInvFilters(); renderChips(); renderInvTable(); }
+  if (S.plan) renderPlan();
+  if (S.upload) { renderUploadInfo(); if (S.inventory) buildMappingUI(); }
+  if (S.connected && S.conn_info) setConnected(true, S.conn_info);
+  translateDom(document.body);
+}
+
+document.querySelectorAll("#langSwitch button").forEach((b) =>
+  b.addEventListener("click", () => applyLang(b.dataset.lang)));
+
 /* ==== Protokoll & Toasts ============================================ */
 
 const LOG = [];
@@ -74,10 +99,11 @@ document.querySelectorAll(".rail-item").forEach((b) =>
 
 function setConnected(on, info) {
   S.connected = on;
+  S.conn_info = on ? info : null;
   $("connLed").classList.toggle("on", on);
   $("connText").textContent = on
     ? `${info.base_url.replace(/^https?:\/\//, "")} · ${info.version}`
-    : "Nicht verbunden";
+    : t("Nicht verbunden");
   document.querySelectorAll('.rail-item[data-view="inventar"], .rail-item[data-view="import"]')
     .forEach((b) => (b.disabled = !on));
   $("btnDisconnect").disabled = !on;
@@ -169,7 +195,7 @@ $("btnConnect").addEventListener("click", async () => {
       },
     });
     if (remember && !profileName) {
-      toast("Zum Speichern der Verbindung bitte einen Namen vergeben.", "err");
+      toast(t("Zum Speichern der Verbindung bitte einen Namen vergeben."), "err");
     }
     await loadConnections(profileName);
     setConnected(true, info);
@@ -181,7 +207,7 @@ $("btnConnect").addEventListener("click", async () => {
         ${info.vdom ? `<span class="k">VDOM</span><span class="v">${esc(info.vdom)}</span>` : ""}
       </div>`;
     addLog("ok", `Verbunden mit ${info.base_url} (${info.version})`);
-    toast("Verbindung hergestellt.", "ok");
+    toast(t("Verbindung hergestellt."), "ok");
     await loadInventory(true);
     showView("inventar");
   } catch (e) {
@@ -264,6 +290,7 @@ function renderInvTiles() {
     <div class="tile ${folHidden ? "warn" : "dim"}"><div class="num">${withTotal(inv.folders.length, tot.folders)}</div><div class="cap">Ordner sichtbar</div></div>
     <div class="tile dim"><div class="num">${inv.templates.length}</div><div class="cap">Templates</div></div>
     <div class="tile dim"><div class="num">${inv.class_tags.length}</div><div class="cap">Klassifizierungen</div></div>`;
+  retranslate();
 }
 
 /* Auswahl-/Detail-Konfiguration je Inventar-Tab */
@@ -339,10 +366,10 @@ function renderChips() {
   const box = $("invChips");
   box.innerHTML = (S.invChips || []).map((c, i) => {
     const label = c.type === "col"
-      ? `<span class="chip-k">${esc(c.label)}:</span> ${esc(c.value)}`
-      : `<span class="chip-k">Suche:</span> ${esc(c.raw)}`;
+      ? `<span class="chip-k">${esc(t(c.label))}:</span> ${esc(c.value)}`
+      : `<span class="chip-k">${esc(t("Suche"))}:</span> ${esc(c.raw)}`;
     return `<span class="chip">${label}` +
-      `<button class="chip-x" data-idx="${i}" title="Filter entfernen">✕</button></span>`;
+      `<button class="chip-x" data-idx="${i}" title="${esc(t("Filter entfernen"))}">✕</button></span>`;
   }).join("");
   box.querySelectorAll(".chip-x").forEach((b) =>
     b.addEventListener("click", () => removeChip(+b.dataset.idx)));
@@ -520,8 +547,8 @@ function renderInvTable() {
     rows = buildFolderTree();
     S.invRows = rows;
     $("invCount").textContent = String(data.length);
-    const head = `<th class="sel-col"><input type="checkbox" id="selAll" title="alle auswählen"></th>` +
-      `<th>Ordner</th><th>ID</th><th>Secrets</th><th title="inklusive Unterordner">Gesamt</th>`;
+    const head = `<th class="sel-col"><input type="checkbox" id="selAll" title="${esc(t("alle auswählen"))}"></th>` +
+      `<th>${esc(t("Ordner"))}</th><th>ID</th><th>Secrets</th><th title="${esc(t("inklusive Unterordner"))}">${esc(t("Gesamt"))}</th>`;
     const body = rows.map((r, i) => {
       const toggle = r._kids
         ? `<span class="tree-toggle" data-id="${r.id}" title="${r._collapsed ? "aufklappen" : "zuklappen"}">${r._collapsed ? "▸" : "▾"}</span>`
@@ -546,13 +573,13 @@ function renderInvTable() {
         renderInvTable();
       }));
   } else if (!rows.length) {
-    $("invTable").innerHTML = note + `<p class="empty-note">Keine Einträge.</p>`;
+    $("invTable").innerHTML = note + `<p class="empty-note">${esc(t("Keine Einträge."))}</p>`;
   } else {
     const head = (sel ? `<th class="sel-col"><input type="checkbox" id="selAll" title="alle (gefilterten) auswählen"></th>` : "") +
       cols.map((c) => {
         const arrow = S.invSort && S.invSort.key === c.k
           ? `<span class="sort-arrow">${S.invSort.dir === "asc" ? "▲" : "▼"}</span>` : "";
-        return `<th class="sortable" data-key="${esc(c.k)}" title="Nach ${esc(c.l)} sortieren">${esc(c.l)}${arrow}</th>`;
+        return `<th class="sortable" data-key="${esc(c.k)}" title="${esc(t("Nach {c} sortieren", { c: t(c.l) }))}">${esc(t(c.l))}${arrow}</th>`;
       }).join("");
     const body = rows.map((r, i) =>
       `<tr class="clickable" data-idx="${i}">` +
@@ -601,6 +628,7 @@ function renderInvTable() {
                 label: col ? col.l : sp.dataset.key, value: sp.dataset.val });
     }));
   updateDeleteBtn();
+  retranslate();
 }
 
 function updateDeleteBtn() {
@@ -608,7 +636,7 @@ function updateDeleteBtn() {
   const n = document.querySelectorAll("#invTable .sel-row:checked").length;
   const btn = $("btnDelete");
   btn.hidden = !sel || n === 0;
-  btn.textContent = `Auswahl löschen (${n})`;
+  btn.textContent = `${t("Auswahl löschen")} (${n})`;
 }
 
 /* ---- Detailansicht -------------------------------------------------- */
@@ -652,10 +680,11 @@ $("btnDelete").addEventListener("click", async () => {
   });
   if (!items.length) return;
   const preview = items.slice(0, 10).map((i) => i.label).join("\n· ");
-  if (!confirm(`${items.length} Objekt(e) löschen?\n\n· ${preview}` +
-               (items.length > 10 ? `\n… und ${items.length - 10} weitere` : ""))) return;
-  if (!confirm(`Wirklich ENDGÜLTIG löschen?\n\n${items.length} Objekt(e) auf ` +
-               `${$("connText").textContent}\n\nDies kann nicht rückgängig gemacht werden.`)) return;
+  if (!confirm(`${t("{n} Objekt(e) löschen?", { n: items.length })}\n\n· ${preview}` +
+               (items.length > 10 ? `\n… ${t("und {n} weitere", { n: items.length - 10 })}` : ""))) return;
+  if (!confirm(`${t("Wirklich ENDGÜLTIG löschen?")}\n\n${t("{n} Objekt(e) auf {dev}",
+               { n: items.length, dev: $("connText").textContent })}\n\n` +
+               t("Dies kann nicht rückgängig gemacht werden."))) return;
   try {
     await api("/api/delete", { method: "POST", body: { items } });
     addLog("warn", `Löschvorgang gestartet: ${items.length} Objekt(e).`);
@@ -684,7 +713,8 @@ function pollDelete() {
       box.scrollTop = box.scrollHeight;
       if (j.finished) {
         const errs = j.items.filter((i) => i.status === "error").length;
-        toast(errs ? `Löschen beendet – ${errs} Fehler.` : "Objekte gelöscht.", errs ? "err" : "ok");
+        toast(errs ? t("Löschen beendet – {n} Fehler.", { n: errs }) : t("Objekte gelöscht."),
+              errs ? "err" : "ok");
         $("invDetail").innerHTML = "";
         await loadInventory(true);
         return;
@@ -698,7 +728,7 @@ function pollDelete() {
 }
 
 function tableHTML(cols, rows) {
-  if (!rows.length) return `<p class="empty-note">Keine Einträge.</p>`;
+  if (!rows.length) return `<p class="empty-note">${esc(t("Keine Einträge."))}</p>`;
   const head = cols.map((c) => `<th>${esc(c.l)}</th>`).join("");
   const body = rows.map((r) =>
     "<tr>" + cols.map((c) => `<td>${c.r ? c.r(r) : esc(r[c.k] ?? "")}</td>`).join("") + "</tr>"
@@ -789,19 +819,19 @@ async function uploadFile(file) {
 function renderUploadInfo() {
   const up = S.upload;
   const sheetSel = up.sheets.length > 1
-    ? `<label class="inline"><span class="lbl-inline">Blatt</span>
+    ? `<label class="inline"><span class="lbl-inline">${esc(t("Blatt"))}</span>
         <select id="sheetSel">${up.sheets.map((s) =>
           `<option ${s === up.sheet ? "selected" : ""}>${esc(s)}</option>`).join("")}</select></label>`
-    : `<span><span class="k">Blatt:</span> ${esc(up.sheet)}</span>`;
+    : `<span><span class="k">${esc(t("Blatt:"))}</span> ${esc(up.sheet)}</span>`;
   $("uploadInfo").innerHTML = `
     <div class="upload-meta">
-      <span><span class="k">Datei:</span> ${esc(up.filename)}</span>
+      <span><span class="k">${esc(t("Datei:"))}</span> ${esc(up.filename)}</span>
       ${sheetSel}
-      <span><span class="k">Zeilen:</span> ${up.row_count}</span>
-      <span><span class="k">Spalten:</span> ${up.headers.length}</span>
-      <button class="btn primary" id="btnToMapping">Weiter zum Mapping →</button>
+      <span><span class="k">${esc(t("Zeilen:"))}</span> ${up.row_count}</span>
+      <span><span class="k">${esc(t("Spalten:"))}</span> ${up.headers.length}</span>
+      <button class="btn primary" id="btnToMapping">${esc(t("Weiter zum Mapping →"))}</button>
     </div>
-    ${up.truncated ? '<div class="notice">Datei wurde auf 5000 Zeilen begrenzt.</div>' : ""}`;
+    ${up.truncated ? `<div class="notice">${esc(t("Datei wurde auf 5000 Zeilen begrenzt."))}</div>` : ""}`;
   const cols = up.headers.map((h) => ({ k: h, l: h }));
   $("previewTable").innerHTML = tableHTML(cols, up.preview);
   const sel = $("sheetSel");
@@ -812,6 +842,7 @@ function renderUploadInfo() {
     } catch (e) { toast(e.message, "err"); }
   });
   $("btnToMapping").addEventListener("click", () => { gotoStep(2); });
+  retranslate();
 }
 
 /* ==== Mapping-UI ===================================================== */
@@ -847,17 +878,17 @@ function guessColumn(candidates) {
 /* Quelle-Auswahl: Optionen "", fixed, xfix:<wert>, col:<spalte> */
 function srcSelectHTML(id, { fixedOptions = [], preset = null } = {}) {
   const cols = S.upload ? S.upload.headers : [];
-  let opts = `<option value="">— nicht setzen —</option>`;
+  let opts = `<option value="">${esc(t("— nicht setzen —"))}</option>`;
   if (fixedOptions.length) {
-    opts += `<optgroup label="FortiPAM-Werte">` + fixedOptions.map((o) =>
+    opts += `<optgroup label="${esc(t("FortiPAM-Werte"))}">` + fixedOptions.map((o) =>
       `<option value="xfix:${esc(o)}">${esc(o)}</option>`).join("") + `</optgroup>`;
   }
-  opts += `<option value="fixed">Fester Wert …</option>`;
-  opts += `<optgroup label="Excel-Spalten">` + cols.map((c) =>
-    `<option value="col:${esc(c)}">Spalte: ${esc(c)}</option>`).join("") + `</optgroup>`;
+  opts += `<option value="fixed">${esc(t("Fester Wert …"))}</option>`;
+  opts += `<optgroup label="${esc(t("Excel-Spalten"))}">` + cols.map((c) =>
+    `<option value="col:${esc(c)}">${esc(t("Spalte"))}: ${esc(c)}</option>`).join("") + `</optgroup>`;
   return `<span class="src-pair">
     <select id="${id}" data-preset="${esc(preset || "")}">${opts}</select>
-    <input type="text" id="${id}_fx" placeholder="fester Wert" hidden>
+    <input type="text" id="${id}_fx" placeholder="${esc(t("fester Wert"))}" hidden>
   </span>`;
 }
 
@@ -893,9 +924,9 @@ function buildMappingUI() {
   /* --- Secret-Typ-Quelle --- */
   const typeColGuess = guessColumn(["secrettyp", "secret-typ", "typ", "type", "os", "betriebssystem", "template"]);
   $("tplSource").innerHTML =
-    `<option value="fixed">Festes Template für alle Zeilen</option>` +
+    `<option value="fixed">${esc(t("Festes Template für alle Zeilen"))}</option>` +
     headers.map((h) =>
-      `<option value="col:${esc(h)}" ${h === typeColGuess ? "selected" : ""}>Spalte: ${esc(h)}</option>`).join("");
+      `<option value="col:${esc(h)}" ${h === typeColGuess ? "selected" : ""}>${esc(t("Spalte"))}: ${esc(h)}</option>`).join("");
   $("tplFixed").innerHTML = tplNames.map((t) => `<option>${esc(t)}</option>`).join("");
 
   $("tplSource").onchange = () => { renderTplValueMap(); renderFieldMaps(); };
@@ -956,20 +987,20 @@ function buildMappingUI() {
   const descGuess = guessColumn(["beschreibung", "description", "kommentar", "notiz"]);
 
   $("mapTarget").innerHTML = [
-    ["Name *", srcSelectHTML("tName", { preset: nameGuess ? "col:" + nameGuess : null })],
-    ["Adresse (IP/FQDN)", srcSelectHTML("tAddr", { preset: addrGuess ? "col:" + addrGuess : null })],
-    ["Klassifizierung *", srcSelectHTML("tClass", {
+    [t("Name") + " *", srcSelectHTML("tName", { preset: nameGuess ? "col:" + nameGuess : null })],
+    [t("Adresse (IP/FQDN)"), srcSelectHTML("tAddr", { preset: addrGuess ? "col:" + addrGuess : null })],
+    [t("Klassifizierung") + " *", srcSelectHTML("tClass", {
       fixedOptions: tagNames, preset: tagNames.length ? "xfix:" + tagNames[0] : null })],
-    ["Domäne", srcSelectHTML("tDomain", { preset: domGuess ? "col:" + domGuess : null })],
+    [t("Domäne"), srcSelectHTML("tDomain", { preset: domGuess ? "col:" + domGuess : null })],
     ["URL", srcSelectHTML("tUrl", {})],
-    ["Beschreibung", srcSelectHTML("tDesc", { preset: descGuess ? "col:" + descGuess : null })],
+    [t("Beschreibung"), srcSelectHTML("tDesc", { preset: descGuess ? "col:" + descGuess : null })],
   ].map(([l, s]) => `<div class="fname">${l}</div>${s}`).join("");
   ["tName", "tAddr", "tClass", "tDomain", "tUrl", "tDesc"].forEach(wireSrcSelect);
 
   /* --- Secret-Basisfelder --- */
   $("mapSecretBase").innerHTML = [
-    ["Name *", srcSelectHTML("sName", { preset: nameGuess ? "col:" + nameGuess : null })],
-    ["Beschreibung", srcSelectHTML("sDesc", { preset: descGuess ? "col:" + descGuess : null })],
+    [t("Name") + " *", srcSelectHTML("sName", { preset: nameGuess ? "col:" + nameGuess : null })],
+    [t("Beschreibung"), srcSelectHTML("sDesc", { preset: descGuess ? "col:" + descGuess : null })],
   ].map(([l, s]) => `<div class="fname">${l}</div>${s}`).join("");
   ["sName", "sDesc"].forEach(wireSrcSelect);
 
@@ -977,6 +1008,7 @@ function buildMappingUI() {
 
   $("optTargets").onchange = () => { $("panelTarget").style.opacity = $("optTargets").checked ? 1 : .35; };
   $("optSecrets").onchange = () => { $("panelSecret").style.opacity = $("optSecrets").checked ? 1 : .35; };
+  retranslate();
 }
 
 function folderOptionsHTML(includeRoot = true) {
@@ -997,8 +1029,7 @@ function renderTplValueMap() {
   const col = src.slice(4);
   const distinct = (S.upload.distinct || {})[col];
   if (!distinct) {
-    box.innerHTML = `<div class="notice">Spalte '${esc(col)}' hat zu viele oder keine unterschiedlichen Werte
-      – bitte andere Spalte oder festes Template wählen.</div>`;
+    box.innerHTML = `<div class="notice">${esc(t("Spalte '{col}' hat zu viele oder keine unterschiedlichen Werte – bitte andere Spalte oder festes Template wählen.", { col }))}</div>`;
     return;
   }
   const tplNames = S.inventory.templates.map((t) => t.name);
@@ -1015,12 +1046,15 @@ function renderTplValueMap() {
     }
     return tplNames.find((t) => normStr(t).includes(n)) || "";
   };
+  const thVal = t("Wert in Spalte '{col}'", { col });
+  const thTpl = t("FortiPAM-Template");
+  const naOpt = t("— nicht zugeordnet —");
   box.innerHTML = `<div class="vmap-table"><table><thead>
-      <tr><th>Wert in Spalte '${esc(col)}'</th><th>FortiPAM-Template</th></tr></thead><tbody>` +
+      <tr><th>${esc(thVal)}</th><th>${esc(thTpl)}</th></tr></thead><tbody>` +
     distinct.map((v, i) => `<tr><td class="mono">${esc(v)}</td><td>
       <select class="vmap-sel" data-raw="${esc(v)}" id="vmap_${i}">
-        <option value="">— nicht zugeordnet —</option>
-        ${tplNames.map((t) => `<option ${t === guess(v) ? "selected" : ""}>${esc(t)}</option>`).join("")}
+        <option value="">${esc(naOpt)}</option>
+        ${tplNames.map((tn) => `<option ${tn === guess(v) ? "selected" : ""}>${esc(tn)}</option>`).join("")}
       </select></td></tr>`).join("") +
     `</tbody></table></div>`;
   box.querySelectorAll(".vmap-sel").forEach((sel) =>
@@ -1073,8 +1107,7 @@ function renderFieldMaps() {
     (tpl.field || []).forEach((f, fi) => wireSrcSelect(`fmap_${ti}_${fi}`));
   });
   if (!used.length) {
-    box.innerHTML = `<div class="notice">Noch kein Template gewählt bzw. zugeordnet –
-      oben die Secret-Typ-Zuordnung vervollständigen.</div>`;
+    box.innerHTML = `<div class="notice">${esc(t("Noch kein Template gewählt bzw. zugeordnet – oben die Secret-Typ-Zuordnung vervollständigen."))}</div>`;
   }
 }
 
@@ -1355,67 +1388,65 @@ $("btnPlan").addEventListener("click", async () => {
   }
 });
 
-const BADGE = {
-  create: '<span class="badge create">erstellen</span>',
-  exists: '<span class="badge exists">existiert</span>',
-  error: '<span class="badge error">fehler</span>',
-  duplicate: '<span class="badge duplicate">doppelt</span>',
-  none: '<span class="badge none">—</span>',
-};
+const BADGE_KEY = { create: "erstellen", exists: "existiert",
+  error: "fehler", duplicate: "doppelt", none: "—" };
+const BADGE = new Proxy({}, { get: (_, k) =>
+  `<span class="badge ${String(k)}">${esc(t(BADGE_KEY[k] || k))}</span>` });
 
 function renderPlan() {
   const p = S.plan, s = p.summary;
   $("planTiles").innerHTML = `
-    <div class="tile ok"><div class="num">${s.targets_create}</div><div class="cap">Targets neu</div></div>
-    <div class="tile ok"><div class="num">${s.secrets_create}</div><div class="cap">Secrets neu</div></div>
-    <div class="tile dim"><div class="num">${s.folders_create}</div><div class="cap">Ordner neu</div></div>
-    <div class="tile dim"><div class="num">${s.targets_exist + s.secrets_exist}</div><div class="cap">Übersprungen</div></div>
+    <div class="tile ok"><div class="num">${s.targets_create}</div><div class="cap">${t("Targets neu")}</div></div>
+    <div class="tile ok"><div class="num">${s.secrets_create}</div><div class="cap">${t("Secrets neu")}</div></div>
+    <div class="tile dim"><div class="num">${s.folders_create}</div><div class="cap">${t("Ordner neu")}</div></div>
+    <div class="tile dim"><div class="num">${s.targets_exist + s.secrets_exist}</div><div class="cap">${t("Übersprungen")}</div></div>
     <div class="tile ${s.secrets_error + s.row_errors ? "err" : "dim"}">
-      <div class="num">${s.secrets_error + s.row_errors}</div><div class="cap">Fehler</div></div>`;
+      <div class="num">${s.secrets_error + s.row_errors}</div><div class="cap">${t("Fehler")}</div></div>`;
 
   let warn = "";
   for (const n of p.notices || []) {
     warn += `<div class="notice error">${esc(n)}</div>`;
   }
   if (s.secrets_error + s.row_errors > 0) {
-    warn += `<div class="notice error">Zeilen mit Fehlern werden bei der Ausführung übersprungen.</div>`;
+    warn += `<div class="notice error">${esc(t("Zeilen mit Fehlern werden bei der Ausführung übersprungen."))}</div>`;
   }
   if (p.folders.length) {
-    warn += `<div class="notice">Neue Ordner: ${p.folders.map((f) => esc(f.path)).join(" · ")}</div>`;
+    warn += `<div class="notice">${esc(t("Neue Ordner:"))} ${p.folders.map((f) => esc(f.path)).join(" · ")}</div>`;
   }
   $("planWarnings").innerHTML = warn;
 
   let html = "";
   if (p.targets.length) {
     html += `<h2>Targets</h2>` + tableHTML(
-      [{ k: "name", l: "Name" },
-       { k: "action", l: "Aktion", r: (r) => BADGE[r.action] || esc(r.action) },
-       { k: "_addr", l: "Adresse", r: (r) => esc(r.body?.address || "") },
+      [{ k: "name", l: t("Name") },
+       { k: "action", l: t("Aktion"), r: (r) => BADGE[r.action] || esc(r.action) },
+       { k: "_addr", l: t("Adresse"), r: (r) => esc(r.body?.address || "") },
        { k: "_tpl", l: "Template", r: (r) => esc(r.body?.template || "") },
-       { k: "rows", l: "Zeilen", r: (r) => esc(r.rows.join(", ")) }],
+       { k: "rows", l: t("Zeilen"), r: (r) => esc(r.rows.join(", ")) }],
       p.targets);
   }
   if (p.secrets.length) {
     html += `<h2 style="margin-top:22px">Secrets</h2>` + tableHTML(
-      [{ k: "row", l: "Zeile" },
-       { k: "name", l: "Name" },
-       { k: "action", l: "Aktion", r: (r) => BADGE[r.action] || esc(r.action) },
-       { k: "folder_path", l: "Ordner" },
+      [{ k: "row", l: t("Zeile") },
+       { k: "name", l: t("Name") },
+       { k: "action", l: t("Aktion"), r: (r) => BADGE[r.action] || esc(r.action) },
+       { k: "folder_path", l: t("Ordner") },
        { k: "template", l: "Template" },
        { k: "target", l: "Target" },
-       { k: "_msg", l: "Hinweise", r: (r) =>
+       { k: "_msg", l: t("Hinweise"), r: (r) =>
           `<span class="cl-err">${esc(r.error || "")}</span>` +
           (r.warnings?.length ? ` <span class="cl-warn">${esc(r.warnings.join("; "))}</span>` : "") }],
       p.secrets);
   }
   if (p.row_errors.length) {
-    html += `<h2 style="margin-top:22px">Zeilenfehler</h2>` + tableHTML(
-      [{ k: "row", l: "Zeile" }, { k: "error", l: "Fehler" }], p.row_errors);
+    html += `<h2 style="margin-top:22px">${t("Zeilenfehler")}</h2>` + tableHTML(
+      [{ k: "row", l: t("Zeile") }, { k: "error", l: t("Fehler") }], p.row_errors);
   }
-  $("planTable").innerHTML = html || `<p class="empty-note">Nichts zu tun.</p>`;
+  $("planTable").innerHTML = html || `<p class="empty-note">${esc(t("Nichts zu tun."))}</p>`;
 
   $("btnExecute").disabled =
     s.targets_create + s.secrets_create + s.folders_create === 0;
+  retranslate();
 }
 
 $("btnBackMapping").addEventListener("click", () => gotoStep(2));
@@ -1424,9 +1455,9 @@ $("btnBackMapping").addEventListener("click", () => gotoStep(2));
 
 $("btnExecute").addEventListener("click", async () => {
   const s = S.plan.summary;
-  const msg = `Jetzt erstellen?\n\n` +
-    `· ${s.folders_create} Ordner\n· ${s.targets_create} Targets\n· ${s.secrets_create} Secrets\n\n` +
-    `Ziel: ${$("connText").textContent}`;
+  const msg = `${t("Jetzt erstellen")}?\n\n` +
+    `· ${s.folders_create} ${t("Ordner")}\n· ${s.targets_create} Targets\n· ${s.secrets_create} Secrets\n\n` +
+    `${t("Ziel")}: ${$("connText").textContent}`;
   if (!confirm(msg)) return;
   try {
     await api("/api/execute", { method: "POST" });
@@ -1434,7 +1465,7 @@ $("btnExecute").addEventListener("click", async () => {
     $("execLog").innerHTML = "";
     $("btnExecDone").hidden = true;
     $("btnCancel").hidden = false;
-    $("execTitle").textContent = "Ausführung läuft …";
+    $("execTitle").textContent = t("Ausführung läuft …");
     addLog("info", "Bulk-Erstellung gestartet.");
     pollExecution();
   } catch (e) {
@@ -1458,14 +1489,14 @@ function pollExecution() {
       $("execBar").style.width = pct + "%";
       $("execCount").textContent = `${j.done} / ${j.total}`;
       const box = $("execLog");
-      const KIND = { folder: "Ordner", target: "Target", secret: "Secret", system: "System" };
+      const KIND = { folder: t("Ordner"), target: "Target", secret: "Secret", system: "System" };
       for (; renderedItems < j.items.length; renderedItems++) {
         const it = j.items[renderedItems];
         const line = document.createElement("div");
         const sym = it.status === "ok" ? "✔" : it.status === "error" ? "✘" : "·";
         line.className = it.status === "ok" ? "cl-ok" : it.status === "error" ? "cl-err" : "cl-dim";
         line.textContent = `${sym} ${KIND[it.kind] || it.kind} ${it.name}` +
-          (it.row ? ` (Zeile ${it.row})` : "") + (it.message ? ` — ${it.message}` : "");
+          (it.row ? ` (${t("Zeile")} ${it.row})` : "") + (it.message ? ` — ${it.message}` : "");
         box.appendChild(line);
         addLog(it.status === "error" ? "err" : "ok",
           `${KIND[it.kind] || it.kind} ${it.name}: ${it.message || it.status}`);
@@ -1474,14 +1505,15 @@ function pollExecution() {
       if (j.finished) {
         const errors = j.items.filter((i) => i.status === "error").length;
         $("execTitle").textContent = errors
-          ? `Abgeschlossen – ${errors} Fehler`
-          : "Abgeschlossen – alles erstellt";
+          ? `${t("Abgeschlossen –")} ${errors} ${t("Fehler")}`
+          : t("Abgeschlossen – alles erstellt");
         $("execBar").style.width = "100%";
         $("btnCancel").hidden = true;
         $("btnExecDone").hidden = false;
         addLog(errors ? "warn" : "ok",
           `Bulk-Erstellung beendet: ${j.done} Aktionen, ${errors} Fehler.`);
-        toast(errors ? `Fertig mit ${errors} Fehlern.` : "Alle Objekte erstellt.", errors ? "err" : "ok");
+        toast(errors ? t("Fertig mit {n} Fehlern.", { n: errors }) : t("Alle Objekte erstellt."),
+              errors ? "err" : "ok");
         return;
       }
       S.pollTimer = setTimeout(tick, 700);
@@ -1513,13 +1545,22 @@ $("btnLogSave").addEventListener("click", () => {
 
 /* ==== Start ========================================================== */
 
+function buildSoSelects() {
+  document.querySelectorAll(".so-sel").forEach((sel) => {
+    const cur = sel.value;
+    sel.innerHTML = `<option value="">${esc(t("— Gerätestandard —"))}</option>
+      <option value="enable">${esc(t("aktivieren"))}</option>
+      <option value="disable">${esc(t("deaktivieren"))}</option>`;
+    sel.value = cur;
+  });
+}
+
 addLog("info", "FortiPAM Toolkit gestartet.");
-document.querySelectorAll(".so-sel").forEach((sel) => {
-  sel.innerHTML = `<option value="">— Gerätestandard —</option>
-    <option value="enable">aktivieren</option>
-    <option value="disable">deaktivieren</option>`;
-});
+buildSoSelects();
 (async () => {
+  let saved = "de";
+  try { saved = localStorage.getItem("fpt_lang") || "de"; } catch (e) { /* egal */ }
+  await applyLang(saved);
   await loadConnections();
   try {
     const st = await api("/api/status");

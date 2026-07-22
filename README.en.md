@@ -26,7 +26,7 @@ Fortinet **FortiPAM** appliance. Feed it an Excel or CSV list, configure the
 mapping, review the plan, and bulk-create — with three layers of duplicate
 protection, and without a single password leaving your network. Tested against
 FortiPAM **v1.9.0/v1.9.1** (mock suite with 70 checks plus a live appliance).
-The UI is currently German.
+The UI is bilingual (German / English, switchable in the top right).
 
 ## Features
 
@@ -85,6 +85,11 @@ The UI is currently German.
   Windows user account); reconnect without re-entering the token
 - The last-used profile is preselected on start; profiles can be deleted
   individually (removes the stored token as well)
+
+### Interface
+- **Bilingual (German / English)** — switcher in the top right, the choice is
+  persisted; server-generated messages (plan warnings, errors) follow the
+  language too. User data (column names, object names) stays unchanged.
 
 ### Security
 - Runs exclusively on `127.0.0.1` — no cloud, no telemetry, no external CDNs
@@ -262,7 +267,8 @@ app/
   planner.py     plan building, validation, parallel execution
   excel_io.py    Excel/CSV parser, templates, export
   winsec.py      DPAPI encryption (per-profile token storage)
-  static/        UI (index.html, app.js, style.css)
+  i18n.py        language switching for server-generated messages
+  static/        UI (index.html, app.js, style.css, i18n.js)
 dev/             mock FortiPAM + e2e suite + unit tests
 start.bat        start incl. virtual-environment setup
 build_exe.bat    portable EXE via PyInstaller

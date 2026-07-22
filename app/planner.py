@@ -13,6 +13,7 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 
 from .fortipam import FortiPAMClient, FortiPAMError
+from .i18n import tr
 
 EXECUTE_CONCURRENCY = 6   # parallele Schreibzugriffe (Ordner bleiben seriell)
 
@@ -136,18 +137,18 @@ def build_plan(mapping: dict, rows: list[dict], inventory: dict,
         if tpl_src.get("type") == "fixed":
             name = tpl_lookup.get(_norm(tpl_src.get("value")))
             if not name:
-                return "", "Kein gültiges Secret-Template gewählt"
+                return "", tr("Kein gültiges Secret-Template gewählt")
             return name, None
         if tpl_src.get("type") == "column":
             raw = str(row.get(tpl_src.get("value") or "", "") or "").strip()
             if not raw:
-                return "", "Secret-Typ-Spalte ist leer"
+                return "", tr("Secret-Typ-Spalte ist leer")
             mapped = value_map.get(_norm(raw), "")
             canon = tpl_lookup.get(_norm(mapped)) if mapped else None
             if not canon:
-                return "", f"Kein Template für Typ '{raw}' zugeordnet"
+                return "", tr("Kein Template für Typ '{raw}' zugeordnet", raw=raw)
             return canon, None
-        return "", "Keine Template-Quelle konfiguriert"
+        return "", tr("Keine Template-Quelle konfiguriert")
 
     # ---- Ordner-Auflösung --------------------------------------------
     fol_src = smap.get("folder") or {}
@@ -167,7 +168,7 @@ def build_plan(mapping: dict, rows: list[dict], inventory: dict,
         if key in path_to_id:
             return path_to_id[key], path, None
         if not auto_folders and key not in planned_folders:
-            return None, path, f"Ordner '{path}' existiert nicht"
+            return None, path, tr("Ordner '{path}' existiert nicht", path=path)
         # fehlende Kette unterhalb des Basisordners einplanen
         walk = base_path
         for seg in segs:
@@ -194,14 +195,15 @@ def build_plan(mapping: dict, rows: list[dict], inventory: dict,
     def build_target_body(row: dict, secret_tpl: str, issues: list, warnings: list):
         name = resolve_source(tmap.get("name"), row)
         if not name:
-            issues.append("Target-Name ist leer")
+            issues.append(tr("Target-Name ist leer"))
             return None
         body = {"name": name}
 
         cls = resolve_source(tmap.get("class"), row)
         canon_cls = class_tags.get(_norm(cls)) if cls else None
         if not canon_cls:
-            issues.append(f"Klassifizierung '{cls or '—'}' unbekannt (Pflichtfeld)")
+            issues.append(tr("Klassifizierung '{cls}' unbekannt (Pflichtfeld)",
+                             cls=cls or "—"))
             return None
         body["class"] = canon_cls
 
@@ -212,7 +214,7 @@ def build_plan(mapping: dict, rows: list[dict], inventory: dict,
             t_tpl = resolve_source(t_tpl_src, row)
         canon_tpl = tpl_lookup.get(_norm(t_tpl)) if t_tpl else None
         if not canon_tpl:
-            issues.append("Target-Template fehlt oder ist unbekannt (Pflichtfeld)")
+            issues.append(tr("Target-Template fehlt oder ist unbekannt (Pflichtfeld)"))
             return None
         body["template"] = canon_tpl
 
@@ -221,7 +223,7 @@ def build_plan(mapping: dict, rows: list[dict], inventory: dict,
             if val:
                 body[fld] = val
         if not body.get("address"):
-            warnings.append("Target ohne Adresse (IP/FQDN)")
+            warnings.append(tr("Target ohne Adresse (IP/FQDN)"))
         return body
 
     # ---- Secret-Felder je Template -----------------------------------
@@ -248,9 +250,9 @@ def build_plan(mapping: dict, rows: list[dict], inventory: dict,
                     and f.get("mandatory") == "enable":
                 out.append({"id": pos, "name": fname,
                             "value": generate_password(gen_len)})
-                warnings.append(f"Passwort für Feld '{fname}' wird generiert")
+                warnings.append(tr("Passwort für Feld '{fname}' wird generiert", fname=fname))
             elif f.get("mandatory") == "enable" and f.get("type") in ("username", "password"):
-                warnings.append(f"Pflichtfeld '{fname}' ist leer")
+                warnings.append(tr("Pflichtfeld '{fname}' ist leer", fname=fname))
         return out, username
 
     # ---- Zeilen durchgehen -------------------------------------------
@@ -283,8 +285,9 @@ def build_plan(mapping: dict, rows: list[dict], inventory: dict,
                     targets_plan[key]["rows"].append(rownum)
                     if targets_plan[key]["action"] == "create" \
                             and targets_plan[key]["body"] != body:
-                        warnings.append(
-                            f"Target '{body['name']}' mehrfach mit abweichenden Daten – erste Definition gewinnt")
+                        warnings.append(tr(
+                            "Target '{name}' mehrfach mit abweichenden Daten – erste Definition gewinnt",
+                            name=body["name"]))
                 else:
                     exists = target_exists(body["name"])
                     if exists:
@@ -292,8 +295,9 @@ def build_plan(mapping: dict, rows: list[dict], inventory: dict,
                                              "body": body, "rows": [rownum]}
                     else:
                         if exists is None:
-                            warnings.append(
-                                f"Existenz von Target '{body['name']}' konnte nicht geprüft werden")
+                            warnings.append(tr(
+                                "Existenz von Target '{name}' konnte nicht geprüft werden",
+                                name=body["name"]))
                         targets_plan[key] = {"name": body["name"], "action": "create",
                                              "body": body, "rows": [rownum]}
             else:
@@ -305,12 +309,12 @@ def build_plan(mapping: dict, rows: list[dict], inventory: dict,
             if tpl_err:
                 issues.append(tpl_err)
             if not s_name:
-                issues.append("Secret-Name ist leer")
+                issues.append(tr("Secret-Name ist leer"))
             folder_id, folder_path_str, folder_err = resolve_folder(row)
             if folder_err:
                 issues.append(folder_err)
             elif folder_id == 0:
-                issues.append("Secrets können nicht direkt im Root-Ordner liegen – Unterordner wählen")
+                issues.append(tr("Secrets können nicht direkt im Root-Ordner liegen – Unterordner wählen"))
 
             if not issues:
                 if target_ref_src.get("type") == "row_target":
@@ -319,7 +323,8 @@ def build_plan(mapping: dict, rows: list[dict], inventory: dict,
                     target_ref = resolve_source(target_ref_src, row)
                 if target_ref and _norm(target_ref) not in targets_plan \
                         and not target_exists(target_ref):
-                    warnings.append(f"Referenziertes Target '{target_ref}' existiert nicht")
+                    warnings.append(tr("Referenziertes Target '{name}' existiert nicht",
+                                       name=target_ref))
 
                 body = {"name": s_name, "template": secret_tpl,
                         "inherit-permission": "enable"}
@@ -344,7 +349,7 @@ def build_plan(mapping: dict, rows: list[dict], inventory: dict,
                             and s["action"] == "create"), None)
                 if dup and action == "create":
                     action = "duplicate"
-                    warnings.append(f"Doppelt in Datei (zuerst Zeile {dup['row']})")
+                    warnings.append(tr("Doppelt in Datei (zuerst Zeile {row})", row=dup["row"]))
 
                 # Templates mit Pflichtfeld vom Typ target-address brauchen
                 # eine Target-Referenz (oder einen gemappten Feldwert), sonst
@@ -358,9 +363,10 @@ def build_plan(mapping: dict, rows: list[dict], inventory: dict,
                          and not any(x.get("name") == f.get("name")
                                      for x in body["field"])), None)
                     if missing_addr:
-                        warnings.append(
-                            f"Template erwartet eine Ziel-Adresse (Feld '{missing_addr}') – "
-                            f"ohne Target-Referenz lehnt das Gerät die Erstellung ab")
+                        warnings.append(tr(
+                            "Template erwartet eine Ziel-Adresse (Feld '{field}') – "
+                            "ohne Target-Referenz lehnt das Gerät die Erstellung ab",
+                            field=missing_addr))
 
                 # geräteseitige Duplikat-Prüfung (Benutzername + Ziel-Adresse)
                 if action == "create" and dup_enabled and username_val:
@@ -375,11 +381,11 @@ def build_plan(mapping: dict, rows: list[dict], inventory: dict,
                             dup_cache[cache_key] = dup_checker(username_val, addr)
                         result = dup_cache[cache_key]
                         if result is None:
-                            warnings.append("Duplikat-Prüfung (Benutzer/Adresse) nicht möglich")
+                            warnings.append(tr("Duplikat-Prüfung (Benutzer/Adresse) nicht möglich"))
                         elif result[0]:
-                            warnings.append(
-                                f"Gerät meldet bestehendes Secret für '{username_val}' "
-                                f"auf {addr}: {result[1]}")
+                            warnings.append(tr(
+                                "Gerät meldet bestehendes Secret für '{user}' auf {addr}: {msg}",
+                                user=username_val, addr=addr, msg=result[1]))
 
                 secrets_plan.append({
                     "row": rownum, "name": s_name, "action": action,
@@ -401,9 +407,9 @@ def build_plan(mapping: dict, rows: list[dict], inventory: dict,
     targets_list = sorted(targets_plan.values(), key=lambda t: _norm(t["name"]))
 
     if any(f.get("root_level") for f in folders_list) and not folder_owner:
-        notices.append(
+        notices.append(tr(
             "Es werden Ordner direkt unter Root angelegt – dafür ist ein Owner nötig. "
-            "Bitte im Mapping einen Owner für neue Root-Ordner wählen.")
+            "Bitte im Mapping einen Owner für neue Root-Ordner wählen."))
 
     summary = {
         "rows": len(rows),
@@ -476,14 +482,14 @@ def execute_plan(client: FortiPAMClient, plan: dict, job: dict,
         seg = f["path"].split("/")[-1]
         parent_id = path_to_id.get(_norm(f["parent_path"]), None)
         if parent_id is None:
-            push("folder", f["path"], "error", "Übergeordneter Ordner wurde nicht angelegt")
+            push("folder", f["path"], "error", tr("Übergeordneter Ordner wurde nicht angelegt"))
             continue
         body = {"name": seg, "id": 0, "parent-folder": int(parent_id),
                 "group-permission": []}
         if int(parent_id) == 0:
             if not owner:
                 push("folder", f["path"], "error",
-                     "Kein Owner für Root-Ordner konfiguriert")
+                     tr("Kein Owner für Root-Ordner konfiguriert"))
                 continue
             body["inherit-permission"] = "disable"
             body["user-permission"] = [{
@@ -497,41 +503,43 @@ def execute_plan(client: FortiPAMClient, plan: dict, job: dict,
             resp = client.create("secret/folder", body)
             new_id = resp.get("mkey")
             if new_id is None:
-                push("folder", f["path"], "error", "Antwort ohne neue Ordner-ID (mkey)")
+                push("folder", f["path"], "error", tr("Antwort ohne neue Ordner-ID (mkey)"))
                 continue
             path_to_id[_norm(f["path"])] = int(new_id)
-            push("folder", f["path"], "ok", f"angelegt (ID {new_id})")
+            push("folder", f["path"], "ok", tr("angelegt (ID {id})", id=new_id))
         except FortiPAMError as exc:
             push("folder", f["path"], "error", str(exc))
 
     # ---- Targets (parallel) ------------------------------------------
     def create_target(t: dict):
         if job.get("cancel"):
-            push("target", t["name"], "error", "abgebrochen")
+            push("target", t["name"], "error", tr("abgebrochen"))
             return
         try:
             client.create("secret/target", t["body"])
-            push("target", t["name"], "ok", "angelegt")
+            push("target", t["name"], "ok", tr("angelegt"))
         except FortiPAMError as exc:
             push("target", t["name"], "error", str(exc))
 
     # ---- Secrets (parallel) ------------------------------------------
     def create_secret(s: dict):
         if job.get("cancel"):
-            push("secret", s["name"], "error", "abgebrochen", s.get("row"))
+            push("secret", s["name"], "error", tr("abgebrochen"), s.get("row"))
             return
         fid = s.get("folder_id")
         if fid is None:
             fid = path_to_id.get(_norm(s["folder_path"]))
         if fid is None:
             push("secret", s["name"], "error",
-                 f"Ordner '{s['folder_path']}' wurde nicht angelegt", s.get("row"))
+                 tr("Ordner '{path}' wurde nicht angelegt", path=s["folder_path"]),
+                 s.get("row"))
             return
         body = dict(s["body"])
         body["folder"] = int(fid)
         try:
             client.create("secret/database", body)
-            push("secret", s["name"], "ok", f"angelegt in '{s['folder_path']}'", s.get("row"))
+            push("secret", s["name"], "ok",
+                 tr("angelegt in '{path}'", path=s["folder_path"]), s.get("row"))
         except FortiPAMError as exc:
             push("secret", s["name"], "error", str(exc), s.get("row"))
 

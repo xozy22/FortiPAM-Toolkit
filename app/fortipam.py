@@ -5,6 +5,8 @@ import time
 
 import httpx
 
+from .i18n import tr
+
 _RETRY_STATUS = {429}
 _RETRY_DELAYS = (1.0, 2.0, 4.0)   # Backoff bei "Too many requests"
 
@@ -60,11 +62,11 @@ class FortiPAMClient:
                 resp = self._client.request(method, url, params=params, json=body,
                                             headers=headers)
         except httpx.ConnectError as exc:
-            raise FortiPAMError(f"Verbindung fehlgeschlagen: {exc}") from exc
+            raise FortiPAMError(tr("Verbindung fehlgeschlagen: {exc}", exc=exc)) from exc
         except httpx.TimeoutException as exc:
-            raise FortiPAMError("Zeitüberschreitung bei der Anfrage an FortiPAM.") from exc
+            raise FortiPAMError(tr("Zeitüberschreitung bei der Anfrage an FortiPAM.")) from exc
         except httpx.HTTPError as exc:
-            raise FortiPAMError(f"HTTP-Fehler: {exc}") from exc
+            raise FortiPAMError(tr("HTTP-Fehler: {exc}", exc=exc)) from exc
 
         try:
             data = resp.json()
@@ -90,10 +92,10 @@ class FortiPAMClient:
             # FortiPAM liefert hier teils Klartext (z. B. "Missing field in payload: 'x'")
             parts.append(err.strip())
         elif err not in (None, 0, "0", ""):
-            parts.append(f"Fehlercode {err}")
+            parts.append(tr("Fehlercode {err}", err=err))
         hint = _HTTP_HINTS.get(status_code)
         if hint:
-            parts.append(hint)
+            parts.append(tr(hint))
         return " — ".join(parts)
 
     # ------------------------------------------------------------------

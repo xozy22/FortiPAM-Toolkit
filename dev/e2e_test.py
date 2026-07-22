@@ -23,6 +23,9 @@ import sys
 sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parents[1]))
 from app.fortipam import FortiPAMClient  # noqa: E402
 
+# Sprache deterministisch auf Deutsch (Backend-Status ist prozessglobal)
+c.post(f"{APP}/api/lang", json={"lang": "de"})
+
 cl = FortiPAMClient("http://127.0.0.1:9443", "mocktoken", verify_ssl=False)
 resp = cl.create("secret/target", {"name": "RATE429-test", "template": "x", "class": "Import"})
 check("429-retry", resp.get("status") == "success", str(resp)[:120])

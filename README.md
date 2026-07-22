@@ -94,6 +94,11 @@ Live-Gerät).
 - Zuletzt genutztes Profil wird beim Start vorausgewählt; Profile einzeln
   löschbar (entfernt auch den gespeicherten Token)
 
+### Oberfläche
+- **Zweisprachig (Deutsch / English)** — Umschalter oben rechts, Auswahl wird
+  gespeichert; auch servergenerierte Meldungen (Plan-Warnungen, Fehler) folgen
+  der Sprache. Nutzerdaten (Spaltennamen, Objektnamen) bleiben unverändert.
+
 ### Sicherheit
 - Läuft ausschließlich auf `127.0.0.1` — keine Cloud, keine Telemetrie,
   keine externen CDNs (funktioniert in Netzen ohne Internetzugang)
@@ -275,7 +280,8 @@ app/
   planner.py     Plan-Erstellung, Validierung, parallele Ausführung
   excel_io.py    Excel-/CSV-Parser, Vorlagen, Export
   winsec.py      DPAPI-Verschlüsselung (Token-Ablage je Profil)
-  static/        Oberfläche (index.html, app.js, style.css)
+  i18n.py        Sprachumschaltung für servergenerierte Meldungen
+  static/        Oberfläche (index.html, app.js, style.css, i18n.js)
 dev/             Mock-FortiPAM + E2E-Testsuite
 start.bat        Start inkl. Einrichtung der virtuellen Umgebung
 build_exe.bat    Portable EXE per PyInstaller

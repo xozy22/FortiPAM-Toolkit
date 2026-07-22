@@ -9,6 +9,8 @@ from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font, PatternFill
 from openpyxl.utils import get_column_letter
 
+from .i18n import tr
+
 MAX_ROWS = 5000
 MAX_DISTINCT = 80
 
@@ -56,7 +58,7 @@ def parse_csv(data: bytes) -> dict:
         except UnicodeDecodeError:
             continue
     if text is None:
-        raise ValueError("CSV-Datei konnte nicht dekodiert werden (UTF-8/CP1252).")
+        raise ValueError(tr("CSV-Datei konnte nicht dekodiert werden (UTF-8/CP1252)."))
 
     sample = text[:4096]
     try:
@@ -86,7 +88,7 @@ def parse_csv(data: bytes) -> dict:
             break
 
     if not headers:
-        raise ValueError("Keine Kopfzeile in der CSV-Datei gefunden.")
+        raise ValueError(tr("Keine Kopfzeile in der CSV-Datei gefunden."))
 
     distinct: dict[str, list[str]] = {}
     for h in headers:
@@ -115,7 +117,7 @@ def parse_workbook(data: bytes, sheet_name: str | None = None) -> dict:
     wb = load_workbook(io.BytesIO(data), data_only=True, read_only=True)
     sheets = wb.sheetnames
     if not sheets:
-        raise ValueError("Die Arbeitsmappe enthält keine Tabellenblätter.")
+        raise ValueError(tr("Die Arbeitsmappe enthält keine Tabellenblätter."))
     active = sheet_name if sheet_name in sheets else sheets[0]
     ws = wb[active]
 
@@ -143,7 +145,7 @@ def parse_workbook(data: bytes, sheet_name: str | None = None) -> dict:
 
     wb.close()
     if not headers:
-        raise ValueError(f"Keine Kopfzeile im Blatt '{active}' gefunden.")
+        raise ValueError(tr("Keine Kopfzeile im Blatt '{name}' gefunden.", name=active))
 
     distinct: dict[str, list[str]] = {}
     for h in headers:
@@ -184,7 +186,7 @@ def template_workbook(templates: list[dict]) -> bytes:
     Als Secret-Typ wird der exakte Template-Name vorgegeben, damit die
     Zuordnung im Mapping automatisch greift.
     """
-    base = ["Name", "Adresse", "Secret-Typ", "Ordner", "Beschreibung"]
+    base = ["Name", tr("Adresse"), tr("Secret-Typ"), tr("Ordner"), tr("Beschreibung")]
     field_cols: list[str] = []
     for tpl in templates:
         for f in tpl.get("field", []) or []:
@@ -202,9 +204,9 @@ def template_workbook(templates: list[dict]) -> bytes:
     _style_sheet(ws, [26, 22, 30, 24, 30] + [20] * len(field_cols))
 
     for i, tpl in enumerate(templates, start=1):
-        row = {"Name": f"beispiel-{i:02d}", "Adresse": f"10.0.0.{i}",
-               "Secret-Typ": tpl.get("name", ""), "Ordner": "Import/Beispiel",
-               "Beschreibung": f"Beispielzeile für {tpl.get('name', '')}"}
+        row = {"Name": f"beispiel-{i:02d}", tr("Adresse"): f"10.0.0.{i}",
+               tr("Secret-Typ"): tpl.get("name", ""), tr("Ordner"): "Import/Beispiel",
+               tr("Beschreibung"): tr("Beispielzeile für {name}", name=tpl.get("name", ""))}
         for f in tpl.get("field", []) or []:
             name = str(f.get("name", "")).strip()
             if name in field_cols:
@@ -226,30 +228,30 @@ def inventory_workbook(inv: dict) -> bytes:
             ws.append(r)
 
     sheet("Targets",
-          ["Name", "Adresse", "Template", "Klassifizierung", "Domäne", "Beschreibung"],
+          ["Name", tr("Adresse"), "Template", tr("Klassifizierung"), tr("Domäne"), tr("Beschreibung")],
           [28, 22, 30, 22, 22, 34],
           [[t.get("name", ""), t.get("address", ""), t.get("template", ""),
             t.get("class", ""), t.get("domain", ""), t.get("description", "")]
            for t in inv.get("targets", [])])
     sheet("Secrets",
-          ["ID", "Name", "Ordner", "Template", "Target", "Beschreibung"],
+          ["ID", "Name", tr("Ordner"), "Template", "Target", tr("Beschreibung")],
           [8, 28, 28, 30, 28, 34],
           [[s.get("id", ""), s.get("name", ""), s.get("folder_path", ""),
             s.get("template", ""), s.get("target", ""), s.get("description", "")]
            for s in inv.get("secrets", [])])
-    sheet("Ordner",
-          ["ID", "Pfad", "Übergeordnet (ID)"],
+    sheet(tr("Ordner"),
+          ["ID", tr("Pfad"), tr("Übergeordnet (ID)")],
           [8, 40, 18],
           [[f.get("id", ""), f.get("path", ""), f.get("parent-folder", "")]
            for f in inv.get("folders", [])])
     sheet("Templates",
-          ["Name", "Server-Info", "Felder"],
+          ["Name", tr("Server-Info"), tr("Felder")],
           [32, 16, 60],
           [[t.get("name", ""), t.get("server-info", ""),
             ", ".join(f"{f.get('name')} ({f.get('type')})" for f in (t.get("field") or []))]
            for t in inv.get("templates", [])])
-    sheet("Klassifizierungen",
-          ["Name", "Beschreibung"],
+    sheet(tr("Klassifizierungen"),
+          ["Name", tr("Beschreibung")],
           [28, 50],
           [[t.get("name", ""), t.get("description", "")]
            for t in inv.get("class_tags", [])])
